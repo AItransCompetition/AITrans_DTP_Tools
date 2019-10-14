@@ -128,11 +128,18 @@ class AITrans_tc(object):
 
 
     ############################    tc operation    ############################
-    def tc_add_simple_brandwidth(self, nic_name, rate, unit="kbit", qtype="tbf"):
+    def tc_add_simple_brandwidth(self, nic_name, rate, unit="kbit", qtype="tbf", qlevel=2, op="add"):
 
+        #父子节点关系需要考虑，若直接使用，需确保root节点已经建立，否则把“parent 1:1”换成“root”
+        #默认root已经创建，故qlevel=2，若只设置网卡出带宽，qlevel=1
+        #op取值:add, change
         if (qtype == "tbf"):
-            status = os.system("tc qdisc add dev {0} parent 1:1 handle 10: tbf rate {1}{2} buffer 1600 limit 3000". \
-                               format(nic_name, rate, unit))
+            if(qlevel == 2):
+                status = os.system("tc qdisc {3} dev {0} parent 1:1 handle 10: tbf rate {1}{2} buffer 1600 limit 3000". \
+                               format(nic_name, rate, unit, op))
+            elif(qlevel == 1):
+                status = os.system("tc qdisc {3} dev {0} root handle 1: tbf rate {1}{2} buffer 1600 limit 3000". \
+                               format(nic_name, rate, unit, op))
 
         return status
 
@@ -152,10 +159,11 @@ class AITrans_tc(object):
         return status
 
 
-    def tc_add_qdisc_delay_loss(self, nic_name, delay_ms, delay_range, loss_pct):
-
-        status = os.system("tc qdisc add dev {0} root handle 1:0 netem delay {1}ms {2}ms {3}%".format  \
-                            (nic_name, delay_ms, delay_range, loss_pct))
+    def tc_add_qdisc_delay_loss(self, nic_name, delay_ms, delay_range, loss_pct, op="add"):
+        #op取值:add, change
+        
+        status = os.system("tc qdisc {4} dev {0} root handle 1:0 netem delay {1}ms {2}ms {3}%".format  \
+                            (nic_name, delay_ms, delay_range, loss_pct, op))
 
         return status
 
