@@ -1,0 +1,112 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+'''
+# @ModuleName : main
+# @Function : get the data from redis and train DQN by the data
+# @Author : azson
+# @Time : 2019/10/24 15:40
+'''
+
+from torch_dqn import DQN
+from redis_py import Redis_py
+import numpy as np
+# from tf_dqn import DeepQNetwork
+
+# DQN
+BATCH_SIZE = 32
+LR = 0.01  # learning rate
+EPSILON = 0.9  # 最优选择动作百分比
+GAMMA = 0.9  # 奖励递减参数
+TARGET_REPLACE_ITER = 100  # Q 现实网络的更新频率
+MEMORY_CAPACITY = 2000  # 记忆库大小
+
+# env
+N_ACTIONS = 5
+N_STATES = 3
+
+# redis
+REDIS_HOST="127.0.0.1"
+REDIS_PORT=6379
+
+
+if __name__ == '__main__':
+
+    # 创建torch DQN网络
+    dqn = DQN(N_STATES=N_STATES,
+             N_ACTIONS=N_ACTIONS,
+             LR=LR,
+             EPSILON=EPSILON,
+             GAMMA=GAMMA,
+             TARGET_REPLACE_ITER=TARGET_REPLACE_ITER,
+             MEMORY_CAPACITY=MEMORY_CAPACITY,
+             BATCH_SIZE=BATCH_SIZE)
+
+    # tf qdn
+    # dqn = DeepQNetwork(
+    #     n_actions=N_ACTIONS,
+    #     n_features=N_STATES,
+    #     learning_rate=LR,
+    #     e_greedy=EPSILON,
+    #     reward_decay=GAMMA,
+    #     replace_target_iter=TARGET_REPLACE_ITER,
+    #     memory_size=MEMORY_CAPACITY,
+    #     batch_size=BATCH_SIZE,
+    # )
+
+
+    # 获取redis连接
+    env = Redis_py(REDIS_HOST, REDIS_PORT)
+
+    print('\nCollecting experience...')
+
+    ep_r = 0
+    i_episode = 0
+    while True:
+
+        # 获取具有 block_[0-9]* 模式的block，取字典序最大，即时间戳最大，即最新的block
+        latest_block_id, latest_block = env.get_latest_block_info()
+
+        # 测试数据少，不开启，用于保证该条block只用一次
+        # env.del_block(latest_block_id)
+
+        if not latest_block_id:
+            # redis没数据时等待
+            print("there is no data in redis...")
+            continue
+
+
+        # 从redis中提取数据
+        s = list(map(lambda x:np.float64(x), latest_block[-N_STATES:][::-1]))
+        a = np.float64(latest_block[-N_STATES-1])
+        r = np.float64(latest_block[-N_STATES-2])
+        s_ = list(map(lambda x:np.float64(x), latest_block[:N_STATES][::-1]))
+
+        # 输入到记忆库
+        dqn.store_transition(s, a, r, s_)
+
+        ep_r += r
+
+        # 从redis中获取是否停止训练的信号
+        done = env.get_set_item('done')
+
+        # DQN learn
+        if dqn.memory_counter > MEMORY_CAPACITY:
+            print("latest block {0}".format(latest_block))
+            dqn.learn()
+
+
+        # 持久化NN
+        if i_episode and i_episode % 10000 == 0:
+            dqn.save2onnx()
+
+
+        if done == 'True':
+            print('Ep: ', i_episode,
+                  '| Ep_r: ', round(ep_r, 2))
+
+            break
+
+        i_episode += 1
+        pre_block = latest_block
+        # s = s_
