@@ -31,8 +31,8 @@ REDIS_PORT=6379
 
 
 if __name__ == '__main__':
-
-    # 创建torch DQN网络
+    #
+    # # 创建torch DQN网络
     dqn = DQN(N_STATES=N_STATES,
              N_ACTIONS=N_ACTIONS,
              LR=LR,
@@ -42,7 +42,7 @@ if __name__ == '__main__':
              MEMORY_CAPACITY=MEMORY_CAPACITY,
              BATCH_SIZE=BATCH_SIZE)
 
-    # tf qdn
+    #tf qdn
     # dqn = DeepQNetwork(
     #     n_actions=N_ACTIONS,
     #     n_features=N_STATES,
@@ -65,41 +65,46 @@ if __name__ == '__main__':
     while True:
 
         # 获取具有 block_[0-9]* 模式的block，取字典序最大，即时间戳最大，即最新的block
-        latest_block_id, latest_block = env.get_latest_block_info()
+        latest_block_id_list, latest_block_list = env.get_latest_block_info()
 
-        # 测试数据少，不开启，用于保证该条block只用一次
-        # env.del_block(latest_block_id)
-
-        if not latest_block_id:
-            # redis没数据时等待
-            print("there is no data in redis...")
+        if not latest_block_id_list:
             continue
 
+        for latest_block_id, latest_block in zip(latest_block_id_list, latest_block_list):
 
-        # 从redis中提取数据
-        s = list(map(lambda x:np.float64(x), latest_block[-N_STATES:][::-1]))
-        a = np.float64(latest_block[-N_STATES-1])
-        r = np.float64(latest_block[-N_STATES-2])
-        s_ = list(map(lambda x:np.float64(x), latest_block[:N_STATES][::-1]))
+            # 测试数据少，不开启，用于保证该条block只用一次
+            # env.del_block(latest_block_id)
 
-        # 输入到记忆库
-        dqn.store_transition(s, a, r, s_)
+            if not latest_block_id or len(latest_block) != N_STATES*2 + 2:
+                # redis没完整数据时等待
+                print("there is complete data in redis...")
+                continue
 
-        ep_r += r
+            # 从redis中提取数据
+            s = list(map(lambda x:np.float64(x), latest_block[-N_STATES:][::-1]))
+            a = np.float64(latest_block[-N_STATES-1])
+            r = np.float64(latest_block[-N_STATES-2])
+            s_ = list(map(lambda x:np.float64(x), latest_block[:N_STATES][::-1]))
+
+            # 输入到记忆库
+            dqn.store_transition(s, a, r, s_)
+
+            ep_r += r
+
+            # DQN learn
+            if dqn.memory_counter > MEMORY_CAPACITY:
+                print("latest block {0}".format(latest_block))
+                dqn.learn()
+
+
+            # 持久化NN
+            if i_episode and i_episode % 10000 == 0:
+                dqn.save2onnx()
+
+            i_episode += 1
 
         # 从redis中获取是否停止训练的信号
         done = env.get_set_item('done')
-
-        # DQN learn
-        if dqn.memory_counter > MEMORY_CAPACITY:
-            print("latest block {0}".format(latest_block))
-            dqn.learn()
-
-
-        # 持久化NN
-        if i_episode and i_episode % 10000 == 0:
-            dqn.save2onnx()
-
 
         if done == 'True':
             print('Ep: ', i_episode,
@@ -107,6 +112,6 @@ if __name__ == '__main__':
 
             break
 
-        i_episode += 1
-        pre_block = latest_block
+
+
         # s = s_

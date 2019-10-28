@@ -84,18 +84,20 @@ class Redis_py(object):
         return ret
 
 
-    def get_latest_block_info(self):
+    def get_latest_block_info(self, size=1):
         '''
-        get the latest block id and information with the pattern 'block_[0-9]*'
+        get the top size latest block id and information with the pattern 'block_[0-9]*'
         :return: block
         '''
-        block_list = self.rd.keys(pattern='block_[0-9]*')
-        block_list = sorted(block_list)
+        block_id_list = self.rd.keys(pattern='block_[0-9]*')
+        block_id_list = sorted(block_id_list)[-size:]
 
-        if not len(block_list):
+        if not len(block_id_list):
             return None, None
 
-        return block_list[-1], self.get_block_by_id(block_list[-1])
+        block_list = [self.get_block_by_id(item) for item in block_id_list]
+
+        return block_id_list, block_list
 
 
     def get_set_item(self, name):
@@ -121,8 +123,8 @@ if __name__ == '__main__':
     # print(obj.lpush_elem_by_blockId(block_id, [2, 2, 1, 2, 1, 1, 3, 1]))
 
     # 旧数据
-    # block_id = "block_221321"
-    # print(obj.lpush_elem_by_blockId(block_id, [1, 2, 3, 2, -1, 1, 2, 2]))
+    block_id = "block_821321"
+    print(obj.lpush_elem_by_blockId(block_id, [1, 2, 3, 2, -1, 1, 2, 2]))
 
     # print(obj.lpush_elem_by_blockId(block_id, [1,2,3]))
     # print(obj.get_block_by_id(block_id))
