@@ -13,6 +13,7 @@ from redis_py import Redis_py
 import numpy as np
 # from tf_dqn import DeepQNetwork
 
+
 # DQN
 BATCH_SIZE = 32
 LR = 0.01  # learning rate
@@ -22,12 +23,24 @@ TARGET_REPLACE_ITER = 100  # Q 现实网络的更新频率
 MEMORY_CAPACITY = 2000  # 记忆库大小
 
 # env
-N_ACTIONS = 5
+N_ACTIONS = 3
 N_STATES = 3
+LEARN_START=200
+LEARN_CIRCLE=10
 
 # redis
 REDIS_HOST="127.0.0.1"
 REDIS_PORT=6379
+REDIS_DATA_CIRCLE=(N_STATES+1)*2 #s、a、r、s_
+
+Iters2Save=10000
+
+
+def clear_single_data(raw_data):
+
+    order_data = [raw_data[i:i+REDIS_DATA_CIRCLE:] for i in range(0, len(raw_data), REDIS_DATA_CIRCLE)]
+    order_data = np.array(order_data, dtype=np.float64)
+    return order_data.mean(axis=0)
 
 
 if __name__ == '__main__':
@@ -54,7 +67,6 @@ if __name__ == '__main__':
     #     batch_size=BATCH_SIZE,
     # )
 
-
     # 获取redis连接
     env = Redis_py(REDIS_HOST, REDIS_PORT)
 
@@ -65,20 +77,22 @@ if __name__ == '__main__':
     while True:
 
         # 获取具有 block_[0-9]* 模式的block，取字典序最大，即时间戳最大，即最新的block
-        latest_block_id_list, latest_block_list = env.get_latest_block_info()
+        latest_block_id_list, latest_block_list = env.get_latest_block_info(size=100)
 
         if not latest_block_id_list:
             continue
 
         for latest_block_id, latest_block in zip(latest_block_id_list, latest_block_list):
 
-            # 测试数据少，不开启，用于保证该条block只用一次
-            # env.del_block(latest_block_id)
-
-            if not latest_block_id or len(latest_block) != N_STATES*2 + 2:
+            if not latest_block_id or len(latest_block) % REDIS_DATA_CIRCLE:
                 # redis没完整数据时等待
                 print("there is complete data in redis...")
                 continue
+
+            # 测试数据少，不开启，用于保证该条block只用一次
+            # env.del_block(latest_block_id)
+
+            latest_block = clear_single_data(latest_block)
 
             # 从redis中提取数据
             s = list(map(lambda x:np.float64(x), latest_block[-N_STATES:][::-1]))
@@ -92,13 +106,12 @@ if __name__ == '__main__':
             ep_r += r
 
             # DQN learn
-            if dqn.memory_counter > MEMORY_CAPACITY:
+            if dqn.memory_counter > LEARN_START and dqn.memory_counter % LEARN_CIRCLE == 0:
                 print("latest block {0}".format(latest_block))
                 dqn.learn()
 
-
             # 持久化NN
-            if i_episode and i_episode % 10000 == 0:
+            if i_episode and i_episode % Iters2Save == 0:
                 dqn.save2onnx()
 
             i_episode += 1
@@ -111,7 +124,5 @@ if __name__ == '__main__':
                   '| Ep_r: ', round(ep_r, 2))
 
             break
-
-
 
         # s = s_

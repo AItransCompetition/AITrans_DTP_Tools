@@ -120,11 +120,14 @@ if __name__ == '__main__':
 
     # 新数据
     # block_id = "block_521321"
-    # print(obj.lpush_elem_by_blockId(block_id, [2, 2, 1, 2, 1, 1, 3, 1]))
+    # print(obj.lpush_elem_by_blockId(block_id, [1, 2, 1, 1, 1, 1, 3, 1]))
 
     # 旧数据
-    block_id = "block_821321"
-    print(obj.lpush_elem_by_blockId(block_id, [1, 2, 3, 2, -1, 1, 2, 2]))
+    # block_id = "block_221321"
+    # print(obj.lpush_elem_by_blockId(block_id, [1, 2, 3, 0, -1, 1, 2, 2]))
+
+    # block_id = "block_221321"
+    # print(obj.lpush_elem_by_blockId(block_id, [1, 2, 2, 1, -1, 2, 2, 1]))
 
     # print(obj.lpush_elem_by_blockId(block_id, [1,2,3]))
     # print(obj.get_block_by_id(block_id))
