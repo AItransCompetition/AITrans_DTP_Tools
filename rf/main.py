@@ -76,6 +76,15 @@ if __name__ == '__main__':
     i_episode = 0
     while True:
 
+        # 从redis中获取是否停止训练的信号
+        done = env.get_set_item('done')
+
+        if done == 'True':
+            print('Ep: ', i_episode,
+                  '| Ep_r: ', round(ep_r, 2))
+
+            break
+
         # 获取具有 block_[0-9]* 模式的block，取字典序最大，即时间戳最大，即最新的block
         latest_block_id_list, latest_block_list = env.get_latest_block_info(size=100)
 
@@ -115,14 +124,5 @@ if __name__ == '__main__':
                 dqn.save2onnx()
 
             i_episode += 1
-
-        # 从redis中获取是否停止训练的信号
-        done = env.get_set_item('done')
-
-        if done == 'True':
-            print('Ep: ', i_episode,
-                  '| Ep_r: ', round(ep_r, 2))
-
-            break
 
         # s = s_

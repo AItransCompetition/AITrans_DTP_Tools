@@ -44,6 +44,23 @@ class Redis_py(object):
         return ret
 
 
+    def rpush_elem_by_blockId(self, block_id, others=None):
+        '''
+        equal to lpush in redis
+        :param block_id: list name
+        :param others: the elements in list
+        :return: succuss num
+        '''
+        if not others:
+            others = [-1, -1, -1]
+
+        ret = 0
+        for item in others:
+            ret += self.rd.rpush(block_id, item)
+
+        return ret
+
+
     def lset_elem_by_blockId(self, block_id, index, value):
 
         return self.rd.lset(block_id, index, value)
@@ -136,5 +153,23 @@ if __name__ == '__main__':
     ls1 = r.keys(pattern='block_[0-9]*')
     print(ls1)
     print(obj.get_latest_block_info())
-    #obj.reset()
+    # obj.reset()
     # print(r.delete(ls1[-1]))
+
+    print("block_1")
+    print(obj.rpush_elem_by_blockId("block_3", [1, 2, 3, 4, 5, 6, 7, 8,
+                                                0.1, 1, 0.6,
+                                                -210,
+                                                2, 3, 4, 1, 3, 5, 6, 7]))
+
+    # print("block_2")
+    # print(obj.rpush_elem_by_blockId("block_2", [2, 3, 4, 1, 3, 5, 6, 7,
+    #                                             0.3, 0.2, 0.5,
+    #                                             -7,
+    #                                             4, 5, 3, 5, 7, 4, 3, 6]))
+
+    # print("block_3")
+    # print(obj.rpush_elem_by_blockId("block_3", [4, 5, 3, 5, 7, 4, 3, 6,
+    #                                             0.5, 0.1, 0.4,
+    #                                             -3,
+    #                                             6, 2, 3, 2, 9, 3, 5, 4]))
