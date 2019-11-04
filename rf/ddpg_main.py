@@ -12,6 +12,7 @@ import time
 from torch_ddpg import DDPG
 from redis_py import Redis_py
 import numpy as np
+import re, os, json
 
 
 #####################  hyper parameters  ####################
@@ -30,24 +31,122 @@ ENV_NAME = 'Pendulum-v0'
 
 ################### env ###################
 
-N_STATES = 8
+N_STATES = 6
 N_ACTIONS = 3
 a_bound = 1
 
 # redis
 REDIS_HOST="127.0.0.1"
 REDIS_PORT=6379
-REDIS_DATA_CIRCLE=N_STATES*2 + N_ACTIONS + 1 #s、a、r、s_
 
-Iters2Save=10000
+REDIS_DATA_CIRCLE=N_STATES*2+3+1 #s、a、r、s_
+REDIS_DATA_P_MAX=2
+REDIS_DATA_BW_MAX=10000
+REDIS_DATA_RTT_MAX=2000
+
+Iters2Save=1000
+STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'remaing_time', 'priority', 'send_buf_len']
+
+pre_reward = {}
 
 
 def clear_single_data(raw_data):
+    '''
+    get (s, a, r)
+    :param raw_data:
+    :return:
+    '''
 
-    order_data = [raw_data[i:i+REDIS_DATA_CIRCLE:] for i in range(0, len(raw_data), REDIS_DATA_CIRCLE)]
-    order_data = np.array(order_data, dtype=np.float64)
+    # cal reward
+    state_idx=-1
+    redis_reward={}
+    total_reward=0
+    fir=True
+    for idx, item in enumerate(raw_data[::-1]):
 
-    return order_data.mean(axis=0)
+        if "ID" not in item:
+            if fir:
+                continue
+            state_idx=idx
+            break
+
+        if fir:
+            fir=False
+
+        id, now_reward = re.findall('[0-9]+', item)
+        id, now_reward = int(id), float(now_reward)
+
+        if id not in pre_reward.keys():
+            pre_reward[id] = 0
+
+        if id not in redis_reward.keys():
+            redis_reward[id] = 0
+
+        redis_reward[id] = max(redis_reward[id], now_reward)
+
+    if state_idx == -1:
+        return None
+
+    for item in redis_reward.keys():
+        total_reward += redis_reward[item] - pre_reward[item]
+        pre_reward[item] = redis_reward[item]
+
+    # cal states
+    order_data = {}
+    test_one=None
+    for item in raw_data[-state_idx-1:0:-1]:
+        item = json.loads(item)
+
+        if item['block_size'] == 0 or item['deadline'] == 0:
+            continue
+
+        if item['block_id'] not in order_data.keys():
+            order_data[item['block_id']] = item
+            test_one = item['block_id']
+        # use the latest
+        # 网络状态包含的block_id可能在reward中无记录
+        if len(order_data) == len(set(list(redis_reward.keys()) + list(order_data.keys()))):
+            break
+    # print('clear_single_data', order_data)
+    # 一条list有多个block，先只搞一个
+    if not test_one:
+        return None
+    order_data = order_data[test_one]
+    #bandwidth
+    order_data['bandwidth'] /= REDIS_DATA_BW_MAX
+    #rtt
+    order_data['rtt'] /= REDIS_DATA_BW_MAX
+    #priority
+    order_data['priority'] /= REDIS_DATA_P_MAX
+    #remaing_time
+    order_data['remaing_time'] /= order_data['deadline']
+    #send_buf_len
+    order_data['send_buf_len'] /= order_data['block_size']
+    #abc
+    action = [order_data['priority_params'], order_data['deadline_params'], order_data['finish_params']]
+
+    return action + [total_reward] + [order_data[item] for item in STATES_KEYS]
+
+
+def gen_next_data(id_list, block_list):
+
+    ret = []
+
+    for idx, block in enumerate(block_list):
+        # print("func gen_next_data block id {0} info {1}".format(id_list[idx], block))
+        tmp = clear_single_data(block)
+
+        if tmp == None:
+            print("!!block id {0}, info {1} is useless data".format(id_list[idx], block))
+            continue
+        # print("ok~~~~")
+        ret = ret[-N_STATES:]
+        ret = ret + tmp
+        # print(len(ret), ret)
+        if len(ret) == REDIS_DATA_CIRCLE:
+
+            yield id_list[idx], ret
+            # ret=ret[]
 
 
 def test_redis_data(op='show_list'):
@@ -82,7 +181,6 @@ def test_redis_data(op='show_list'):
                                                     6, 2, 3, 2, 9, 3, 5, 4]))
 
 
-
 if __name__ == '__main__':
 
     env = Redis_py(REDIS_HOST, REDIS_PORT)
@@ -102,6 +200,7 @@ if __name__ == '__main__':
     t1 = time.time()
     i_episode = 0
     ep_reward = 0
+    pre_block=None
 
     while True:
 
@@ -114,26 +213,30 @@ if __name__ == '__main__':
 
             break
 
-        latest_block_id_list, latest_block_list = env.get_latest_block_info(size=100)
+        latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern='*_ATTEMP-*', size=100)
 
         if not latest_block_id_list:
             continue
 
-        for latest_block_id, latest_block in zip(latest_block_id_list, latest_block_list):
-
+        for latest_block_id, latest_block in gen_next_data(latest_block_id_list, latest_block_list):
+            # print(latest_block_id, len(latest_block), REDIS_DATA_CIRCLE)
             if not latest_block_id or len(latest_block) % REDIS_DATA_CIRCLE:
+                    # or (pre_block and latest_block_id <= pre_block):
                 # redis没完整数据时等待
                 print("there is no complete data in redis...")
                 continue
 
-            latest_block = clear_single_data(latest_block)
+            pre_block = latest_block_id if not pre_block else max(latest_block_id, pre_block)
 
             # 从redis中提取数据
             s = list(map(lambda x: np.float64(x), latest_block[:N_STATES]))
             a = list(map(lambda x: np.float64(x), latest_block[N_STATES: N_STATES+N_ACTIONS]))
             r = np.float64(latest_block[N_STATES+N_ACTIONS])
             s_ = list(map(lambda x: np.float64(x), latest_block[N_STATES+N_ACTIONS+1:]))
-
+            print("clear!")
+            print(s, a, r, s_)
+            if r > 0:
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             # pred_a = ddpg.choose_action(s)
             # print("pred_a is {0}".format(pred_a))
             # pred_s = [8, 7, 6, 5, 4, 3, 2, 1]
@@ -155,8 +258,10 @@ if __name__ == '__main__':
 
             # 持久化NN
             if i_episode and i_episode % Iters2Save == 0:
-                pass
-                #ddpg.save2onnx()
+
+                ddpg.save2onnx()
+                # restart rust
+                os.system("echo hello AITrans!")
 
             # s = s_
             ep_reward += r

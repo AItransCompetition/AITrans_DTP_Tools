@@ -101,20 +101,48 @@ class Redis_py(object):
         return ret
 
 
-    def get_latest_block_info(self, size=1):
+    def get_latest_block_info(self, pattern='block_[0-9]*', size=1, pre_block=None):
         '''
         get the top size latest block id and information with the pattern 'block_[0-9]*'
-        :return: block
+        :return: str, list
         '''
-        block_id_list = self.rd.keys(pattern='block_[0-9]*')
-        block_id_list = sorted(block_id_list)[-size:]
+        block_id_list = self.rd.keys(pattern=pattern)
 
         if not len(block_id_list):
             return None, None
 
+        block_id_list = sorted(block_id_list)
+
+        if pre_block and pre_block in block_id_list:
+            pre_idx = block_id_list.index(pre_block)
+            block_id_list = block_id_list[pre_idx+1:]
+
+        block_id_list = block_id_list[-size:]
         block_list = [self.get_block_by_id(item) for item in block_id_list]
 
         return block_id_list, block_list
+
+
+    def scan_block_info(self, cursor=0, pattern='*_ATTEMP-*', size=100, pre_block=None):
+        '''
+        use scan order to get the block info
+        :return: int, str, list
+        '''
+        rt_cur, block_id_list = self.rd.scan(cursor, pattern, size)
+
+        if not len(block_id_list):
+            return rt_cur, None, None
+
+        block_id_list = sorted(block_id_list)
+
+        if pre_block and pre_block in block_id_list:
+            pre_idx = block_id_list.index(pre_block)
+            block_id_list = block_id_list[pre_idx + 1:]
+
+        block_id_list = block_id_list[-size:]
+        block_list = [self.get_block_by_id(item) for item in block_id_list]
+
+        return rt_cur, block_id_list, block_list
 
 
     def get_set_item(self, name):
@@ -156,11 +184,14 @@ if __name__ == '__main__':
     # obj.reset()
     # print(r.delete(ls1[-1]))
 
-    print("block_1")
-    print(obj.rpush_elem_by_blockId("block_3", [1, 2, 3, 4, 5, 6, 7, 8,
-                                                0.1, 1, 0.6,
-                                                -210,
-                                                2, 3, 4, 1, 3, 5, 6, 7]))
+    ls2 = r.scan(0, 'block_[0-9]*')
+    print(ls2)
+
+    # print("block_1")
+    # print(obj.rpush_elem_by_blockId("block_3", [1, 2, 3, 4, 5, 6, 7, 8,
+    #                                             0.1, 1, 0.6,
+    #                                             -210,
+    #                                             2, 3, 4, 1, 3, 5, 6, 7]))
 
     # print("block_2")
     # print(obj.rpush_elem_by_blockId("block_2", [2, 3, 4, 1, 3, 5, 6, 7,
