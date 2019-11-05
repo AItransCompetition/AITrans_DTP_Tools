@@ -44,7 +44,7 @@ REDIS_DATA_P_MAX=2
 REDIS_DATA_BW_MAX=10000
 REDIS_DATA_RTT_MAX=2000
 
-Iters2Save=1000
+Iters2Save=100
 STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'remaing_time', 'priority', 'send_buf_len']
 
 pre_reward = {}
@@ -60,7 +60,6 @@ def clear_single_data(raw_data):
     # cal reward
     state_idx=-1
     redis_reward={}
-    total_reward=0
     fir=True
     for idx, item in enumerate(raw_data[::-1]):
 
@@ -87,10 +86,6 @@ def clear_single_data(raw_data):
     if state_idx == -1:
         return None
 
-    for item in redis_reward.keys():
-        total_reward += redis_reward[item] - pre_reward[item]
-        pre_reward[item] = redis_reward[item]
-
     # cal states
     order_data = {}
     test_one=None
@@ -108,24 +103,30 @@ def clear_single_data(raw_data):
         if len(order_data) == len(set(list(redis_reward.keys()) + list(order_data.keys()))):
             break
     # print('clear_single_data', order_data)
-    # 一条list有多个block，先只搞一个
-    if not test_one:
-        return None
-    order_data = order_data[test_one]
-    #bandwidth
-    order_data['bandwidth'] /= REDIS_DATA_BW_MAX
-    #rtt
-    order_data['rtt'] /= REDIS_DATA_BW_MAX
-    #priority
-    order_data['priority'] /= REDIS_DATA_P_MAX
-    #remaing_time
-    order_data['remaing_time'] /= order_data['deadline']
-    #send_buf_len
-    order_data['send_buf_len'] /= order_data['block_size']
-    #abc
-    action = [order_data['priority_params'], order_data['deadline_params'], order_data['finish_params']]
+    ret = []
 
-    return action + [total_reward] + [order_data[item] for item in STATES_KEYS]
+    for key, val in order_data.items():
+
+        #bandwidth
+        val['bandwidth'] /= REDIS_DATA_BW_MAX
+        #rtt
+        val['rtt'] /= REDIS_DATA_BW_MAX
+        #priority
+        val['priority'] /= REDIS_DATA_P_MAX
+        #remaing_time
+        val['remaing_time'] /= val['deadline']
+        #send_buf_len
+        val['send_buf_len'] /= val['block_size']
+        #abc
+        action = [val['priority_params'], val['deadline_params'], val['finish_params']]
+        if key not in redis_reward.keys():
+            continue
+        ret.append(action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS])
+
+    for item in redis_reward.keys():
+        pre_reward[item] = redis_reward[item]
+
+    return ret
 
 
 def gen_next_data(id_list, block_list):
@@ -139,6 +140,7 @@ def gen_next_data(id_list, block_list):
         if tmp == None:
             print("!!block id {0}, info {1} is useless data".format(id_list[idx], block))
             continue
+        tmp = tmp[0]
         # print("ok~~~~")
         ret = ret[-N_STATES:]
         ret = ret + tmp
@@ -202,8 +204,8 @@ if __name__ == '__main__':
             a = list(map(lambda x: np.float64(x), latest_block[N_STATES: N_STATES+N_ACTIONS]))
             r = np.float64(latest_block[N_STATES+N_ACTIONS])
             s_ = list(map(lambda x: np.float64(x), latest_block[N_STATES+N_ACTIONS+1:]))
-            print("clear!")
-            print(s, a, r, s_)
+            # print("clear!")
+            # print(s, a, r, s_)
             if r > 0:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-{0}-".format(latest_block_id))
                 #time.sleep(1)
@@ -229,7 +231,8 @@ if __name__ == '__main__':
             # 持久化NN
             if i_episode and i_episode % Iters2Save == 0:
 
-                ddpg.save2onnx()
+                file_name = ddpg.save2onnx()
+                ddpg.load_onnx(file_name)
                 # restart rust
                 os.system("echo hello AITrans!")
 

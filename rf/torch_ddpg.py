@@ -154,7 +154,7 @@ class DDPG(object):
         # b_a = torch.FloatTensor(b_t[:, self.s_dim: self.s_dim + self.a_dim])
         # b_r = torch.FloatTensor(b_t[:, -self.s_dim - 1: -self.s_dim])
         b_s_ = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -self.s_dim:]).reshape((-1, self.s_dim)))
-        print(b_s, b_s_)
+        # print(b_s, b_s_)
         output = torch.onnx.export(self.Actor_eval,
                                    b_s,
                                    file_name.replace('suffix', 'eval'),
@@ -173,7 +173,8 @@ class DDPG(object):
         if not file_name:
             return None
         import onnx
-        import onnx_caffe2.backend as backend
+        # import onnx_caffe2.backend as backend
+        import caffe2.python.onnx.backend as backend
         print("load_onnx")
         model = onnx.load(file_name)
         print(onnx.checker.check_model(model))
