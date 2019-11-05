@@ -39,7 +39,7 @@ a_bound = 1
 REDIS_HOST="127.0.0.1"
 REDIS_PORT=6379
 
-REDIS_DATA_CIRCLE=N_STATES*2+3+1 #s、a、r、s_
+REDIS_DATA_CIRCLE=N_STATES*2+N_ACTIONS+1 #s、a、r、s_
 REDIS_DATA_P_MAX=2
 REDIS_DATA_BW_MAX=10000
 REDIS_DATA_RTT_MAX=2000
@@ -149,38 +149,6 @@ def gen_next_data(id_list, block_list):
             # ret=ret[]
 
 
-def test_redis_data(op='show_list'):
-
-    if op == 'show_list':
-
-        ls1 = env.get_latest_block_info(size=0)
-        print(ls1)
-
-    elif op == 'clear_block':
-
-        print(env.reset())
-
-    elif op == 'prepare_block_list':
-
-        print("block_1")
-        print(env.rpush_elem_by_blockId("block_1", [1, 2, 3, 4, 5, 6, 7, 8,
-                                                    0.1, 0.3, 0.6,
-                                                    10,
-                                                    2, 3, 4, 1, 3, 5, 6, 7]))
-
-        print("block_2")
-        print(env.rpush_elem_by_blockId("block_2", [2, 3, 4, 1, 3, 5, 6, 7,
-                                                    0.3, 0.2, 0.5,
-                                                    7,
-                                                    4, 5, 3, 5, 7, 4, 3, 6]))
-
-        print("block_3")
-        print(env.rpush_elem_by_blockId("block_3", [4, 5, 3, 5, 7, 4, 3, 6,
-                                                    0.5, 0.1, 0.4,
-                                                    -3,
-                                                    6, 2, 3, 2, 9, 3, 5, 4]))
-
-
 if __name__ == '__main__':
 
     env = Redis_py(REDIS_HOST, REDIS_PORT)
@@ -195,7 +163,8 @@ if __name__ == '__main__':
                 BATCH_SIZE,
                 TAU
                 )
-
+    # ddpg.load_onnx()
+    # exit(0)
     var = 3  # control exploration
     t1 = time.time()
     i_episode = 0
@@ -236,7 +205,8 @@ if __name__ == '__main__':
             print("clear!")
             print(s, a, r, s_)
             if r > 0:
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-{0}-".format(latest_block_id))
+                #time.sleep(1)
             # pred_a = ddpg.choose_action(s)
             # print("pred_a is {0}".format(pred_a))
             # pred_s = [8, 7, 6, 5, 4, 3, 2, 1]
