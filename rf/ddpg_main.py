@@ -43,6 +43,7 @@ REDIS_DATA_CIRCLE=N_STATES*2+N_ACTIONS+1 #s、a、r、s_
 REDIS_DATA_P_MAX=2
 REDIS_DATA_BW_MAX=10000
 REDIS_DATA_RTT_MAX=2000
+REDIS_DATA_PATTERN="FIRST_ATTEMP-*"
 
 Iters2Save=1000
 STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'remaing_time', 'priority', 'send_buf_len']
@@ -51,6 +52,20 @@ pre_reward = {}
 records = {}
 
 statis=[0, 0]
+
+
+################### rust controler ###################
+
+rust_path="/root/junjay/examples/"
+ddpg_path="/root/junjay/AITrans_DTP/rf/"
+file_model_path="config/model_path"
+ATTEMP_NUMS=1
+
+order_list = [
+    rust_path + "server 127.0.0.1 6666 > ddpg_server.log >/dev/null 2>&1 & ",
+    rust_path + "client 127.0.0.1 6666 config/config-DTP.txt 0.5 0.5 >/dev/null 2>&1 & "
+]
+
 
 def clear_single_data(raw_data):
     '''
@@ -77,6 +92,9 @@ def clear_single_data(raw_data):
         id, now_reward = re.findall('[0-9]+', item)
         id, now_reward = int(id), float(now_reward)
 
+        if now_reward == 0:
+            continue
+
         if id not in pre_reward.keys():
             pre_reward[id] = 0
 
@@ -87,12 +105,16 @@ def clear_single_data(raw_data):
 
     # no reward in this list
     if state_idx == -1:
-        return None
+        return None, None
 
     # cal states
     order_data = {}
 
     for item in raw_data[-state_idx-1:0:-1]:
+
+        if "ID" in item:
+            continue
+
         item = json.loads(item)
 
         if item['block_size'] == 0 or item['deadline'] == 0:
@@ -107,6 +129,8 @@ def clear_single_data(raw_data):
             break
     # print('clear_single_data', order_data)
     ret = {}
+
+    log_s_reward = .0
 
     for key, val in order_data.items():
 
@@ -127,24 +151,35 @@ def clear_single_data(raw_data):
             continue
 
         ret[key] = action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS]
+        if redis_reward[key] - pre_reward[key] < 0:
+            print(key)
+        log_s_reward += redis_reward[key] - pre_reward[key]
 
     # update old reward
     for item in redis_reward.keys():
         pre_reward[item] = redis_reward[item]
 
-    return ret
+    return ret, log_s_reward
 
 
 def gen_next_data(id_list, block_list):
 
+
     for idx, block in enumerate(block_list):
         # print("func gen_next_data block id {0} info {1}".format(id_list[idx], block))
-        now_dt = clear_single_data(block)
+        now_dt, s_reward = clear_single_data(block)
 
         if now_dt == None:
-            print("!!block id {0}, info {1} is useless data".format(id_list[idx], block))
+            # print("!!block id {0}, info {1} is useless data".format(id_list[idx], block))
             statis[0] += 1
             continue
+
+        if s_reward < 0:
+            print(id_list[idx], s_reward)
+
+        with open("reward.log", "a") as f:
+            f.write(str(s_reward))
+            f.write("\n")
 
         for key, val in now_dt.items():
             # print("ok~~~~")
@@ -159,6 +194,50 @@ def gen_next_data(id_list, block_list):
             if len(ret) == REDIS_DATA_CIRCLE:
 
                 yield id_list[idx], ret
+
+
+def cmd_content(cmd):
+
+    f = os.popen(cmd, "r")
+    return f.read()
+
+
+def restart_rust(onnx_file):
+
+    global ATTEMP_NUMS, records, pre_reward
+
+    records = {}
+    pre_reward = {}
+
+    os.system("echo restart rust")
+    os.system("cp %s %s" % (onnx_file, rust_path+"ddpg_jay.onnx"))
+    # change file model_path
+    print("change model path file")
+    with open(rust_path+file_model_path, "w") as f:
+        # f.write(onnx_file+'\n')
+        f.write("ddpg_jay.onnx\n")
+        ATTEMP_NUMS += 1
+        f.write(REDIS_DATA_PATTERN[:-1].replace("FIRST", "STEP_%d" % ATTEMP_NUMS))
+
+    # kill server
+    print("kill server")
+    ret = cmd_content("lsof -i:6666")
+    if len(ret) >= 9:
+        os.system("kill -9 %s" % ret.split()[10])
+
+    # kill client
+    print("kill client")
+    ret = cmd_content('ps -aux | grep "client 127.0.0.1"')
+
+    if 'client 127.0.0.1 6666' in ret:
+        p = ret.index('client 127.0.0.1 6666')
+        ps = ret[:p].split()[1]
+        os.system("kill -9 %s" % ps)
+
+    os.system("echo restart rust")
+    for od in order_list:
+        os.system(od)
+
 
 
 if __name__ == '__main__':
@@ -193,9 +272,13 @@ if __name__ == '__main__':
 
             break
 
-        latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern='*_ATTEMP-*', size=100)
+        real_pattern = REDIS_DATA_PATTERN if ATTEMP_NUMS == 1 else REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
+        latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern=real_pattern, size=0)
 
         if not latest_block_id_list:
+            print("there is no data with pattern %s in redis" % (real_pattern))
+            restart_rust('ddpg_jay.onnx')
+            time.sleep(1)
             continue
 
         for latest_block_id, latest_block in gen_next_data(latest_block_id_list, latest_block_list):
@@ -217,9 +300,8 @@ if __name__ == '__main__':
             statis[1] += 1
             # print("clear!")
             # print(s, a, r, s_)
-            if r > 0:
-                print("reward > 0, block id-{0}-".format(latest_block_id))
-                #time.sleep(1)
+            # if r > 0:
+                # print("reward > 0, block id-{0}-".format(latest_block_id))
 
             ddpg.store_transition(s, a, r, s_)
 
@@ -231,9 +313,12 @@ if __name__ == '__main__':
             if i_episode and i_episode % Iters2Save == 0:
                 print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1]/statis[0]))
                 file_name = ddpg.save2onnx()
-                ddpg.load_onnx(file_name)
+                print("load onnx")
+                # ddpg.load_onnx(file_name)
                 # restart rust
-                os.system("echo restart rust")
+                restart_rust(file_name)
+                # leave time for rust
+                time.sleep(5)
 
             # s = s_
             ep_reward += r
@@ -243,5 +328,10 @@ if __name__ == '__main__':
                 print('Episode:', i_episode, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, )
                 if ep_reward > -300: RENDER = True
                 # break
+        # update redis data
+        file_name = ddpg.save2onnx()
+        restart_rust(file_name)
+        # leave time for rust
+        time.sleep(5)
 
     print('Running time: ', time.time() - t1)

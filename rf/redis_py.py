@@ -111,7 +111,7 @@ class Redis_py(object):
         if not len(block_id_list):
             return None, None
 
-        block_id_list = sorted(block_id_list)
+        block_id_list = sorted(block_id_list, key=lambda x:int(x.decode('utf8').split('-')[-1]))
 
         if pre_block and pre_block in block_id_list:
             pre_idx = block_id_list.index(pre_block)
@@ -133,7 +133,7 @@ class Redis_py(object):
         if not len(block_id_list):
             return rt_cur, None, None
 
-        block_id_list = sorted(block_id_list)
+        block_id_list = sorted(block_id_list, key=lambda x:int(x.decode('utf8').split('-')[-1]))
 
         if pre_block and pre_block in block_id_list:
             pre_idx = block_id_list.index(pre_block)
