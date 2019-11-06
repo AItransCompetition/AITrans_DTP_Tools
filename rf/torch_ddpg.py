@@ -145,16 +145,11 @@ class DDPG(object):
 
         # 使用时间戳命名onnx文件
         if not file_name:
-            file_name ='torch_%s_suffix.onnx' % ''.join(str(time.time()).split('.'))
+            file_name ='output/torch_%s_suffix.onnx' % ''.join(str(time.time()).split('.'))
 
-        # 抽取记忆库中的批数据
-        #indices = np.random.choice(self.MEMORY_CAPACITY, size=self.BATCH_SIZE)
-        #b_t = self.memory[0, :]
         b_s = torch.autograd.Variable(torch.FloatTensor(self.memory[0, :self.s_dim]).reshape((-1, self.s_dim)))
-        # b_a = torch.FloatTensor(b_t[:, self.s_dim: self.s_dim + self.a_dim])
-        # b_r = torch.FloatTensor(b_t[:, -self.s_dim - 1: -self.s_dim])
         b_s_ = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -self.s_dim:]).reshape((-1, self.s_dim)))
-        # print(b_s, b_s_)
+
         output = torch.onnx.export(self.Actor_eval,
                                    b_s,
                                    file_name.replace('suffix', 'eval'),
@@ -165,10 +160,10 @@ class DDPG(object):
                                    file_name.replace('suffix', 'target'),
                                    verbose=False)
 
-        return file_name.replace('suffix', 'target')
+        return file_name.replace('suffix', 'eval')
 
 
-    def load_onnx(self, file_name='torch_15728833105783641_target.onnx'):
+    def load_onnx(self, file_name='output/torch_15728833105783641_eval.onnx'):
 
         if not file_name:
             return None
@@ -177,10 +172,9 @@ class DDPG(object):
         import caffe2.python.onnx.backend as backend
         print("load_onnx")
         model = onnx.load(file_name)
-        print(onnx.checker.check_model(model))
+
         rep = backend.prepare(model, device='CPU')
-        s = np.array([0.5, .00004, .3, 0.000002, .01, .006], dtype=np.float32).reshape((-1, self.s_dim))
+        s = np.array([0.15464788732394366, 0.497, 0.0, 0.9992660479428109, 0.0, 0.567515], dtype=np.float32).reshape((-1, self.s_dim))
 
         print(rep.run(s))
-        print(self.choose_action([0.5, .00004, .3, 0.000002, .01, .006]))
-        # [0.3615257142857143, 0.0035, 0.0, 0.9994467834731613, 0.0, 1.0] [0.5, 0.5, 0.0]
+        print(self.choose_action([0.15464788732394366, 0.497, 0.0, 0.9992660479428109, 0.0, 0.567515]))

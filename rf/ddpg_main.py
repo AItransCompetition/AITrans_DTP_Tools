@@ -44,11 +44,13 @@ REDIS_DATA_P_MAX=2
 REDIS_DATA_BW_MAX=10000
 REDIS_DATA_RTT_MAX=2000
 
-Iters2Save=100
+Iters2Save=1000
 STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'remaing_time', 'priority', 'send_buf_len']
 
 pre_reward = {}
+records = {}
 
+statis=[0, 0]
 
 def clear_single_data(raw_data):
     '''
@@ -83,12 +85,13 @@ def clear_single_data(raw_data):
 
         redis_reward[id] = max(redis_reward[id], now_reward)
 
+    # no reward in this list
     if state_idx == -1:
         return None
 
     # cal states
     order_data = {}
-    test_one=None
+
     for item in raw_data[-state_idx-1:0:-1]:
         item = json.loads(item)
 
@@ -97,20 +100,20 @@ def clear_single_data(raw_data):
 
         if item['block_id'] not in order_data.keys():
             order_data[item['block_id']] = item
-            test_one = item['block_id']
+
         # use the latest
         # 网络状态包含的block_id可能在reward中无记录
         if len(order_data) == len(set(list(redis_reward.keys()) + list(order_data.keys()))):
             break
     # print('clear_single_data', order_data)
-    ret = []
+    ret = {}
 
     for key, val in order_data.items():
 
         #bandwidth
         val['bandwidth'] /= REDIS_DATA_BW_MAX
         #rtt
-        val['rtt'] /= REDIS_DATA_BW_MAX
+        val['rtt'] /= REDIS_DATA_RTT_MAX
         #priority
         val['priority'] /= REDIS_DATA_P_MAX
         #remaing_time
@@ -119,10 +122,13 @@ def clear_single_data(raw_data):
         val['send_buf_len'] /= val['block_size']
         #abc
         action = [val['priority_params'], val['deadline_params'], val['finish_params']]
+
         if key not in redis_reward.keys():
             continue
-        ret.append(action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS])
 
+        ret[key] = action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS]
+
+    # update old reward
     for item in redis_reward.keys():
         pre_reward[item] = redis_reward[item]
 
@@ -131,24 +137,28 @@ def clear_single_data(raw_data):
 
 def gen_next_data(id_list, block_list):
 
-    ret = []
-
     for idx, block in enumerate(block_list):
         # print("func gen_next_data block id {0} info {1}".format(id_list[idx], block))
-        tmp = clear_single_data(block)
+        now_dt = clear_single_data(block)
 
-        if tmp == None:
+        if now_dt == None:
             print("!!block id {0}, info {1} is useless data".format(id_list[idx], block))
+            statis[0] += 1
             continue
-        tmp = tmp[0]
-        # print("ok~~~~")
-        ret = ret[-N_STATES:]
-        ret = ret + tmp
-        # print(len(ret), ret)
-        if len(ret) == REDIS_DATA_CIRCLE:
 
-            yield id_list[idx], ret
-            # ret=ret[]
+        for key, val in now_dt.items():
+            # print("ok~~~~")
+            if key not in records.keys():
+                records[key] = val
+                continue
+
+            ret = records[key][-N_STATES:]
+            ret = ret + val
+            records[key] = val
+            # print(len(ret), ret)
+            if len(ret) == REDIS_DATA_CIRCLE:
+
+                yield id_list[idx], ret
 
 
 if __name__ == '__main__':
@@ -165,8 +175,7 @@ if __name__ == '__main__':
                 BATCH_SIZE,
                 TAU
                 )
-    # ddpg.load_onnx()
-    # exit(0)
+
     var = 3  # control exploration
     t1 = time.time()
     i_episode = 0
@@ -204,23 +213,13 @@ if __name__ == '__main__':
             a = list(map(lambda x: np.float64(x), latest_block[N_STATES: N_STATES+N_ACTIONS]))
             r = np.float64(latest_block[N_STATES+N_ACTIONS])
             s_ = list(map(lambda x: np.float64(x), latest_block[N_STATES+N_ACTIONS+1:]))
+
+            statis[1] += 1
             # print("clear!")
             # print(s, a, r, s_)
             if r > 0:
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!-{0}-".format(latest_block_id))
+                print("reward > 0, block id-{0}-".format(latest_block_id))
                 #time.sleep(1)
-            # pred_a = ddpg.choose_action(s)
-            # print("pred_a is {0}".format(pred_a))
-            # pred_s = [8, 7, 6, 5, 4, 3, 2, 1]
-            # pred_a = ddpg.choose_action(pred_s)
-            # print("s is {1}, pred_a is {0}".format(pred_a, pred_s))
-
-            # # Add exploration noise
-            # a = ddpg.choose_action(s)
-            # a = np.clip(np.random.normal(a, var), -2, 2)  # add randomness to action selection for exploration
-            # s_, r, done, info = env.step(a)
-            # print(s, a, r, s_)
-            #reward 是否scale？
 
             ddpg.store_transition(s, a, r, s_)
 
@@ -230,11 +229,11 @@ if __name__ == '__main__':
 
             # 持久化NN
             if i_episode and i_episode % Iters2Save == 0:
-
+                print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1]/statis[0]))
                 file_name = ddpg.save2onnx()
                 ddpg.load_onnx(file_name)
                 # restart rust
-                os.system("echo hello AITrans!")
+                os.system("echo restart rust")
 
             # s = s_
             ep_reward += r
