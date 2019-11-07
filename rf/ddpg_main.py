@@ -46,10 +46,12 @@ REDIS_DATA_RTT_MAX=2000
 REDIS_DATA_PATTERN="FIRST_ATTEMP-*"
 
 Iters2Save=1000
+Seconds2Save=30.
 STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'remaing_time', 'priority', 'send_buf_len']
 
 pre_reward = {}
 records = {}
+pre_redis_list_id=None
 
 statis=[0, 0]
 
@@ -69,9 +71,9 @@ order_list = [
 
 def clear_single_data(raw_data):
     '''
-    get (s, a, r)
+    clear single redis list data
     :param raw_data:
-    :return:
+    :return: [[a, r, s] ...], total reward
     '''
 
     # cal reward
@@ -103,7 +105,7 @@ def clear_single_data(raw_data):
 
         redis_reward[id] = max(redis_reward[id], now_reward)
 
-    # no reward in this list
+    # no state in this list
     if state_idx == -1:
         return None, None
 
@@ -134,6 +136,9 @@ def clear_single_data(raw_data):
 
     for key, val in order_data.items():
 
+        if key not in redis_reward.keys():
+            continue
+
         #bandwidth
         val['bandwidth'] /= REDIS_DATA_BW_MAX
         #rtt
@@ -146,9 +151,6 @@ def clear_single_data(raw_data):
         val['send_buf_len'] /= val['block_size']
         #abc
         action = [val['priority_params'], val['deadline_params'], val['finish_params']]
-
-        if key not in redis_reward.keys():
-            continue
 
         ret[key] = action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS]
         if redis_reward[key] - pre_reward[key] < 0:
@@ -163,7 +165,6 @@ def clear_single_data(raw_data):
 
 
 def gen_next_data(id_list, block_list):
-
 
     for idx, block in enumerate(block_list):
         # print("func gen_next_data block id {0} info {1}".format(id_list[idx], block))
@@ -273,7 +274,7 @@ if __name__ == '__main__':
             break
 
         real_pattern = REDIS_DATA_PATTERN if ATTEMP_NUMS == 1 else REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
-        latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern=real_pattern, size=0)
+        latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern=real_pattern, size=0, pre_block=pre_redis_list_id)
 
         if not latest_block_id_list:
             print("there is no data with pattern %s in redis" % (real_pattern))
@@ -284,24 +285,18 @@ if __name__ == '__main__':
         for latest_block_id, latest_block in gen_next_data(latest_block_id_list, latest_block_list):
             # print(latest_block_id, len(latest_block), REDIS_DATA_CIRCLE)
             if not latest_block_id or len(latest_block) % REDIS_DATA_CIRCLE:
-                    # or (pre_block and latest_block_id <= pre_block):
                 # redis没完整数据时等待
                 print("there is no complete data in redis...")
                 continue
 
-            pre_block = latest_block_id if not pre_block else max(latest_block_id, pre_block)
-
+            pre_redis_list_id = latest_block_id
             # 从redis中提取数据
             s = list(map(lambda x: np.float64(x), latest_block[:N_STATES]))
             a = list(map(lambda x: np.float64(x), latest_block[N_STATES: N_STATES+N_ACTIONS]))
             r = np.float64(latest_block[N_STATES+N_ACTIONS])
-            s_ = list(map(lambda x: np.float64(x), latest_block[N_STATES+N_ACTIONS+1:]))
+            s_ = list(map(lambda x: np.float64(x), latest_block[-N_STATES:]))
 
             statis[1] += 1
-            # print("clear!")
-            # print(s, a, r, s_)
-            # if r > 0:
-                # print("reward > 0, block id-{0}-".format(latest_block_id))
 
             ddpg.store_transition(s, a, r, s_)
 
@@ -309,18 +304,6 @@ if __name__ == '__main__':
                 var *= .9995  # decay the action randomness
                 ddpg.learn()
 
-            # 持久化NN
-            if i_episode and i_episode % Iters2Save == 0:
-                print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1]/statis[0]))
-                file_name = ddpg.save2onnx()
-                print("load onnx")
-                # ddpg.load_onnx(file_name)
-                # restart rust
-                restart_rust(file_name)
-                # leave time for rust
-                time.sleep(5)
-
-            # s = s_
             ep_reward += r
             i_episode += 1
 
@@ -328,10 +311,15 @@ if __name__ == '__main__':
                 print('Episode:', i_episode, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, )
                 if ep_reward > -300: RENDER = True
                 # break
-        # update redis data
-        file_name = ddpg.save2onnx()
-        restart_rust(file_name)
-        # leave time for rust
-        time.sleep(5)
+
+        if time.time() - t1 >= Seconds2Save:
+            print("i_episode : {0}, it's time to restart!".format(i_episode))
+            print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1] / statis[0]))
+            t1 = time.time()
+            # update redis data
+            file_name = ddpg.save2onnx()
+            restart_rust(file_name)
+            # leave time for rust
+            time.sleep(5)
 
     print('Running time: ', time.time() - t1)

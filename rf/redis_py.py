@@ -103,7 +103,7 @@ class Redis_py(object):
 
     def get_latest_block_info(self, pattern='block_[0-9]*', size=1, pre_block=None):
         '''
-        get the top size latest block id and information with the pattern 'block_[0-9]*'
+        get the top size latest block id and information with the pattern
         :return: str, list
         '''
         block_id_list = self.rd.keys(pattern=pattern)
@@ -153,6 +153,11 @@ class Redis_py(object):
     def set_set_val(self, name, value):
 
         return self.rd.set(name, value)
+
+
+    def flush_all(self):
+
+        return self.rd.flushall()
 
 
 
