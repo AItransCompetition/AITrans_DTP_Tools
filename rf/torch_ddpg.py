@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import time
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 
 
 ###############################  DDPG  ####################################
@@ -178,7 +178,7 @@ class DDPG(object):
         b_t = self.memory[indices, :]
         b_s = b_t[:, :3+3*self.N_BLOCKS]
         b_a = torch.FloatTensor(b_t[:, 3+3*self.N_BLOCKS: 3+3*self.N_BLOCKS + self.a_dim])
-        b_r = torch.FloatTensor(b_t[:, -(3+3*self.N_BLOCKS) - 1])
+        b_r = torch.FloatTensor(b_t[:, -(3+3*self.N_BLOCKS) - 1]).reshape((-1, 1))
         b_s_ = b_t[:, -(3+3*self.N_BLOCKS):]
 
         a = self.Actor_eval(b_s)
@@ -194,9 +194,9 @@ class DDPG(object):
         a_ = self.Actor_target(b_s_)  # 这个网络不及时更新参数, 用于预测 Critic 的 Q_target 中的 action
         q_ = self.Critic_target(b_s_, a_)  # 这个网络不及时更新参数, 用于给出 Actor 更新参数时的 Gradient ascent 强度
         q_target = b_r+self.GAMMA*q_  # q_target = 负的
-        #print(q_target)
+        # print(q_target.shape, q_.shape)
         q_v = self.Critic_eval(b_s, b_a)
-        #print(q_v)
+        # print(q_v.shape)
         td_error = self.loss_td(q_target, q_v)
         # td_error=R + GAMMA * ct（bs_,at(bs_)）-ce(s,ba) 更新ce ,但这个ae(s)是记忆中的ba，让ce得出的Q靠近Q_target,让评价更准确
         #print(td_error)
@@ -208,7 +208,6 @@ class DDPG(object):
     def store_transition(self, s, a, r, s_):
         transition = s+a+r+s_
         index = self.pointer % self.MEMORY_CAPACITY  # replace the old memory with new memory
-        # print(transition)
         self.memory[index] = transition
         self.pointer += 1
 
@@ -219,10 +218,10 @@ class DDPG(object):
         if not file_name:
             file_name ='output/torch_%s_suffix.onnx' % ''.join(str(time.time()).split('.'))
 
-        # b_s = torch.FloatTensor(self.memory[:2, :3+3*self.N_BLOCKS]).reshape((-1, 3+3*self.N_BLOCKS)).detach()
         b_s = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -(3+3*self.N_BLOCKS):].reshape((-1, 3+3*self.N_BLOCKS))), requires_grad=False)
         b_s_ = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -(3+3*self.N_BLOCKS):].reshape((-1, 3+3*self.N_BLOCKS))), requires_grad=False)
 
+        # tensorboardX
         # with SummaryWriter(comment='Actor_eval') as w:
         #     w.add_graph(self.Actor_eval, (b_s,))
         #     # w.add_graph(self.Critic_eval, (b_s,))
@@ -230,12 +229,12 @@ class DDPG(object):
         output = torch.onnx.export(self.Actor_eval,
                                    b_s,
                                    file_name.replace('suffix', 'eval'),
-                                   verbose=True)
+                                   verbose=False)
 
         output = torch.onnx.export(self.Actor_target,
                                    b_s_,
                                    file_name.replace('suffix', 'target'),
-                                   verbose=True)
+                                   verbose=False)
 
         return file_name.replace('suffix', 'eval')
 

@@ -12,8 +12,8 @@ import time
 from torch_ddpg import DDPG
 from redis_py import Redis_py
 import numpy as np
-import re, os, json
-
+import re, os, json, threading
+from controller import Env_rust
 
 #####################  hyper parameters  ####################
 
@@ -58,6 +58,7 @@ statis=[0, 0]
 
 ATTEMP_NUMS=3
 
+onnx_file='torch_15732935748391511_eval.onnx'#'sss.onnx'
 
 def clear_single_data(raw_data):
     '''
@@ -80,7 +81,7 @@ def clear_single_data(raw_data):
     fir=True
     last_states={}
     log_s_reward = .0
-
+    action=None
     # cal reward
     for idx, item in enumerate(raw_data[::-1]):
 
@@ -135,6 +136,9 @@ def clear_single_data(raw_data):
                 action = [item['priority_params'], item['deadline_params'], item['finish_params']]
                 fir = False
 
+    if not action:
+        return None, None
+
     best_blocks = get_the_best_block(list(order_data.values()), topN=N_BLOCKS)
     del order_data
 
@@ -146,12 +150,10 @@ def clear_single_data(raw_data):
 
         last_states['priority'][idx] = val['priority'] / REDIS_DATA_P_MAX
         last_states['remaing_time'][idx] = val['remaing_time'] / val['deadline']
-        if last_states['remaing_time'][idx] < 0:
-            print("error data? remain {0}, deadline {1}, ID {2}".format(val['remaing_time'], val['deadline'], val['block_id']))
+        # if last_states['remaing_time'][idx] < 0:
+        #     print("error data? remain {0}, deadline {1}, ID {2}".format(val['remaing_time'], val['deadline'], val['block_id']))
             # time.sleep(1)
         last_states['send_buf_len'][idx] = val['send_buf_len'] / val['block_size']
-
-        # ret[key] = action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS]
 
     # update old reward
     for item in redis_reward.keys():
@@ -176,8 +178,8 @@ def gen_next_data(id_list, block_list):
             statis[0] += 1
             continue
 
-        if s_reward < 0:
-            print(redis_key, s_reward)
+        # if s_reward < 0:
+        #     print(redis_key, s_reward)
 
         with open("reward.log", "a") as f:
             f.write(str(s_reward))
@@ -191,11 +193,9 @@ def gen_next_data(id_list, block_list):
             yield id_list[idx], global_sars_
 
 
-def ddpg_runner():
+def ddpg_runner(env):
 
-    global pre_redis_list_id
-
-    env = Redis_py(REDIS_HOST, REDIS_PORT)
+    global pre_redis_list_id, onnx_file, ATTEMP_NUMS, pre_reward, global_sars_
 
     ddpg = DDPG(N_ACTIONS,
                 N_STATES,
@@ -229,9 +229,8 @@ def ddpg_runner():
         latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern=real_pattern, size=0, pre_block=pre_redis_list_id)
 
         if not latest_block_id_list or len(latest_block_id_list) == 0:
-            print("there is no data with pattern %s in redis" % (real_pattern))
+            print("%f there is no data with pattern %s in redis" % (time.time(), real_pattern))
             # restart_rust('ddpg_jay.onnx')
-            time.sleep(1)
             continue
 
         # print("id list {0} pre id {1}".format(latest_block_id_list, pre_redis_list_id))
@@ -265,22 +264,49 @@ def ddpg_runner():
 
             if i_episode and i_episode % MAX_EP_STEPS == 0:
                 print('Episode:', i_episode, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, )
-                if ep_reward > -300: RENDER = True
-                # break
+                print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1] / statis[0]))
+                onnx_file = ddpg.save2onnx()
 
         if time.time() - t1 >= Seconds2Save:
-            print("i_episode : {0}, it's time to restart!".format(i_episode))
-            print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1] / statis[0]))
             t1 = time.time()
-            # update redis data
-            file_name = ddpg.save2onnx()
-            # restart_rust(file_name)
-            # leave time for rust
-            # time.sleep(5)
+            global_sars_ = []
+            pre_reward = {}
+            print("its time %f" %(t1))
+            ATTEMP_NUMS = int(time.time() * 10 ** 10)
+            real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
+            t2 = threading.Thread(target=rust_env.restart_rust, args=(onnx_file, real_pattern,),
+                                  name='rust restarter')
+            t2.start()
+            print("main")
 
     print('Running time: ', time.time() - t1)
 
 
 if __name__ == '__main__':
 
-    ddpg_runner()
+
+    print("ddpg_main is run~")
+    pre_time = time.time()
+    first_run = True
+    rust_env = Env_rust()
+    redis_env = Redis_py(REDIS_HOST, REDIS_PORT)
+
+    ATTEMP_NUMS = int(time.time() * 10**10)
+    real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
+    rust_env.reset(onnx_file, real_pattern)
+
+    ddpg_runner(redis_env)
+        # t1 = threading.Thread(target=ddpg_runner, args=(redis_env,), name='ddpg_runner')
+        # t1.start()
+        # # t1.join()
+        #
+        # while True:
+        #
+        #     if time.time() - pre_time >= Seconds2Save:
+        #         print("its time")
+        #         pre_time = time.time()
+        #         t2 = threading.Thread(target=rust_env.restart_rust, args=(onnx_file, REDIS_DATA_PATTERN,), name='rust restarter')
+        #         t2.start()
+        #         t1.join()
+        #         t2.join()
+
