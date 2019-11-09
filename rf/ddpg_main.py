@@ -33,6 +33,7 @@ ENV_NAME = 'Pendulum-v0'
 
 N_STATES = 6
 N_ACTIONS = 3
+N_BLOCKS = 5
 a_bound = 1
 
 # redis
@@ -46,27 +47,16 @@ REDIS_DATA_RTT_MAX=2000
 REDIS_DATA_PATTERN="FIRST_ATTEMP-*"
 
 Iters2Save=1000
-Seconds2Save=30.
-STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'remaing_time', 'priority', 'send_buf_len']
+Seconds2Save=20.
+STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'priority', 'remaing_time', 'send_buf_len']
 
 pre_reward = {}
-records = {}
+global_sars_=[]
 pre_redis_list_id=None
 
 statis=[0, 0]
 
-
-################### rust controler ###################
-
-rust_path="/root/junjay/examples/"
-ddpg_path="/root/junjay/AITrans_DTP/rf/"
-file_model_path="config/model_path"
-ATTEMP_NUMS=1
-
-order_list = [
-    rust_path + "server 127.0.0.1 6666 > ddpg_server.log >/dev/null 2>&1 & ",
-    rust_path + "client 127.0.0.1 6666 config/config-DTP.txt 0.5 0.5 >/dev/null 2>&1 & "
-]
+ATTEMP_NUMS=3
 
 
 def clear_single_data(raw_data):
@@ -76,10 +66,22 @@ def clear_single_data(raw_data):
     :return: [[a, r, s] ...], total reward
     '''
 
+
+    def get_the_best_block(list_data, key_col='remaing_time', topN=5, reverse=False):
+
+        res = sorted(list_data, key=lambda x: float(x[key_col]), reverse=reverse)
+
+        return res[:topN]
+
+
     # cal reward
     state_idx=-1
     redis_reward={}
     fir=True
+    last_states={}
+    log_s_reward = .0
+
+    # cal reward
     for idx, item in enumerate(raw_data[::-1]):
 
         if "ID" not in item:
@@ -100,18 +102,19 @@ def clear_single_data(raw_data):
         if id not in pre_reward.keys():
             pre_reward[id] = 0
 
+        # the lastest, the biggest reward
         if id not in redis_reward.keys():
-            redis_reward[id] = 0
-
-        redis_reward[id] = max(redis_reward[id], now_reward)
+            redis_reward[id] = now_reward
+            log_s_reward += redis_reward[id] - pre_reward[id]
 
     # no state in this list
     if state_idx == -1:
         return None, None
 
     # cal states
-    order_data = {}
-
+    order_data={}
+    fir=True
+    ## cal 'bandwidth', 'rtt', 'loss_rate'
     for item in raw_data[-state_idx-1:0:-1]:
 
         if "ID" in item:
@@ -124,124 +127,73 @@ def clear_single_data(raw_data):
 
         if item['block_id'] not in order_data.keys():
             order_data[item['block_id']] = item
+            # use the latest network states
+            if fir:
+                last_states['bandwidth'] = item['bandwidth'] / REDIS_DATA_BW_MAX
+                last_states['rtt'] = item['rtt'] / REDIS_DATA_RTT_MAX
+                last_states['loss_rate'] = item['loss_rate']
+                action = [item['priority_params'], item['deadline_params'], item['finish_params']]
+                fir = False
 
-        # use the latest
-        # 网络状态包含的block_id可能在reward中无记录
-        if len(order_data) == len(set(list(redis_reward.keys()) + list(order_data.keys()))):
-            break
-    # print('clear_single_data', order_data)
-    ret = {}
+    best_blocks = get_the_best_block(list(order_data.values()), topN=N_BLOCKS)
+    del order_data
 
-    log_s_reward = .0
+    last_states['priority'] = [0] * N_BLOCKS
+    last_states['remaing_time'] = [0] * N_BLOCKS
+    last_states['send_buf_len'] = [0] * N_BLOCKS
 
-    for key, val in order_data.items():
+    for idx, val in enumerate(best_blocks):
 
-        if key not in redis_reward.keys():
-            continue
+        last_states['priority'][idx] = val['priority'] / REDIS_DATA_P_MAX
+        last_states['remaing_time'][idx] = val['remaing_time'] / val['deadline']
+        if last_states['remaing_time'][idx] < 0:
+            print("error data? remain {0}, deadline {1}, ID {2}".format(val['remaing_time'], val['deadline'], val['block_id']))
+            # time.sleep(1)
+        last_states['send_buf_len'][idx] = val['send_buf_len'] / val['block_size']
 
-        #bandwidth
-        val['bandwidth'] /= REDIS_DATA_BW_MAX
-        #rtt
-        val['rtt'] /= REDIS_DATA_RTT_MAX
-        #priority
-        val['priority'] /= REDIS_DATA_P_MAX
-        #remaing_time
-        val['remaing_time'] /= val['deadline']
-        #send_buf_len
-        val['send_buf_len'] /= val['block_size']
-        #abc
-        action = [val['priority_params'], val['deadline_params'], val['finish_params']]
-
-        ret[key] = action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS]
-        if redis_reward[key] - pre_reward[key] < 0:
-            print(key)
-        log_s_reward += redis_reward[key] - pre_reward[key]
+        # ret[key] = action + [redis_reward[key] - pre_reward[key]] + [val[item] for item in STATES_KEYS]
 
     # update old reward
     for item in redis_reward.keys():
         pre_reward[item] = redis_reward[item]
+
+    ret = action + [log_s_reward] + [last_states[item] for item in STATES_KEYS]
 
     return ret, log_s_reward
 
 
 def gen_next_data(id_list, block_list):
 
+    global global_sars_
+
     for idx, block in enumerate(block_list):
         # print("func gen_next_data block id {0} info {1}".format(id_list[idx], block))
-        now_dt, s_reward = clear_single_data(block)
+        now_ars, s_reward = clear_single_data(block)
+        redis_key = id_list[idx]
 
-        if now_dt == None:
+        if now_ars == None:
             # print("!!block id {0}, info {1} is useless data".format(id_list[idx], block))
             statis[0] += 1
             continue
 
         if s_reward < 0:
-            print(id_list[idx], s_reward)
+            print(redis_key, s_reward)
 
         with open("reward.log", "a") as f:
             f.write(str(s_reward))
             f.write("\n")
 
-        for key, val in now_dt.items():
-            # print("ok~~~~")
-            if key not in records.keys():
-                records[key] = val
-                continue
+        global_sars_ = global_sars_[-N_STATES:]
+        global_sars_.extend(now_ars)
 
-            ret = records[key][-N_STATES:]
-            ret = ret + val
-            records[key] = val
-            # print(len(ret), ret)
-            if len(ret) == REDIS_DATA_CIRCLE:
+        if len(global_sars_) == REDIS_DATA_CIRCLE:
 
-                yield id_list[idx], ret
+            yield id_list[idx], global_sars_
 
 
-def cmd_content(cmd):
+def ddpg_runner():
 
-    f = os.popen(cmd, "r")
-    return f.read()
-
-
-def restart_rust(onnx_file):
-
-    global ATTEMP_NUMS, records, pre_reward
-
-    records = {}
-    pre_reward = {}
-
-    os.system("echo restart rust")
-    os.system("cp %s %s" % (onnx_file, rust_path+"ddpg_jay.onnx"))
-    # change file model_path
-    print("change model path file")
-    with open(rust_path+file_model_path, "w") as f:
-        # f.write(onnx_file+'\n')
-        f.write("ddpg_jay.onnx\n")
-        ATTEMP_NUMS += 1
-        f.write(REDIS_DATA_PATTERN[:-1].replace("FIRST", "STEP_%d" % ATTEMP_NUMS))
-
-    # kill server
-    print("kill server")
-    ret = cmd_content("lsof -i:6666")
-    if len(ret) >= 9:
-        os.system("kill -9 %s" % ret.split()[10])
-
-    # kill client
-    print("kill client")
-    ret = cmd_content('ps -aux | grep "client 127.0.0.1"')
-
-    if 'client 127.0.0.1 6666' in ret:
-        p = ret.index('client 127.0.0.1 6666')
-        ps = ret[:p].split()[1]
-        os.system("kill -9 %s" % ps)
-
-    os.system("echo restart rust")
-    for od in order_list:
-        os.system(od)
-
-
-
-if __name__ == '__main__':
+    global pre_redis_list_id
 
     env = Redis_py(REDIS_HOST, REDIS_PORT)
 
@@ -253,14 +205,14 @@ if __name__ == '__main__':
                 LR_C,
                 GAMMA,
                 BATCH_SIZE,
-                TAU
+                TAU,
+                N_BLOCKS
                 )
 
     var = 3  # control exploration
     t1 = time.time()
     i_episode = 0
     ep_reward = 0
-    pre_block=None
 
     while True:
 
@@ -273,14 +225,17 @@ if __name__ == '__main__':
 
             break
 
-        real_pattern = REDIS_DATA_PATTERN if ATTEMP_NUMS == 1 else REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
+        real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
         latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern=real_pattern, size=0, pre_block=pre_redis_list_id)
 
-        if not latest_block_id_list:
+        if not latest_block_id_list or len(latest_block_id_list) == 0:
             print("there is no data with pattern %s in redis" % (real_pattern))
-            restart_rust('ddpg_jay.onnx')
+            # restart_rust('ddpg_jay.onnx')
             time.sleep(1)
             continue
+
+        # print("id list {0} pre id {1}".format(latest_block_id_list, pre_redis_list_id))
+        pre_redis_list_id = latest_block_list[-1]
 
         for latest_block_id, latest_block in gen_next_data(latest_block_id_list, latest_block_list):
             # print(latest_block_id, len(latest_block), REDIS_DATA_CIRCLE)
@@ -289,12 +244,13 @@ if __name__ == '__main__':
                 print("there is no complete data in redis...")
                 continue
 
-            pre_redis_list_id = latest_block_id
             # 从redis中提取数据
-            s = list(map(lambda x: np.float64(x), latest_block[:N_STATES]))
-            a = list(map(lambda x: np.float64(x), latest_block[N_STATES: N_STATES+N_ACTIONS]))
-            r = np.float64(latest_block[N_STATES+N_ACTIONS])
-            s_ = list(map(lambda x: np.float64(x), latest_block[-N_STATES:]))
+            s = latest_block[:N_STATES]
+            s = s[:3] + s[3] + s[4] + s[5]
+            a = latest_block[N_STATES: N_STATES+N_ACTIONS]
+            r = [latest_block[N_STATES+N_ACTIONS]]
+            s_ = latest_block[-N_STATES:]
+            s_ = s_[:3] + s_[3] + s_[4] + s_[5]
 
             statis[1] += 1
 
@@ -304,7 +260,7 @@ if __name__ == '__main__':
                 var *= .9995  # decay the action randomness
                 ddpg.learn()
 
-            ep_reward += r
+            ep_reward += r[0]
             i_episode += 1
 
             if i_episode and i_episode % MAX_EP_STEPS == 0:
@@ -318,8 +274,13 @@ if __name__ == '__main__':
             t1 = time.time()
             # update redis data
             file_name = ddpg.save2onnx()
-            restart_rust(file_name)
+            # restart_rust(file_name)
             # leave time for rust
-            time.sleep(5)
+            # time.sleep(5)
 
     print('Running time: ', time.time() - t1)
+
+
+if __name__ == '__main__':
+
+    ddpg_runner()

@@ -6,16 +6,31 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import time
+from tensorboardX import SummaryWriter
 
 
 ###############################  DDPG  ####################################
 
 class ANet(nn.Module):   # ae(s)=a
 
-    def __init__(self,s_dim, a_dim, a_bound):
+    def __init__(self, s_dim, a_dim, a_bound, N_BLOCKS=5):
         super(ANet,self).__init__()
 
         self.a_bound = a_bound
+        self.N_BLOCKS = N_BLOCKS
+        self.s_dim = s_dim
+
+        self.CNN_1 = nn.Conv1d(1, 1, 2)
+        self.CNN_fc_1 = nn.Linear(N_BLOCKS-1, 1)
+        self.CNN_fc_1.weight.data.normal_(0, 0.1)
+
+        self.CNN_2 = nn.Conv1d(1, 1, 2)
+        self.CNN_fc_2 = nn.Linear(N_BLOCKS - 1, 1)
+        self.CNN_fc_2.weight.data.normal_(0, 0.1)
+
+        self.CNN_3 = nn.Conv1d(1, 1, 2)
+        self.CNN_fc_3 = nn.Linear(N_BLOCKS - 1, 1)
+        self.CNN_fc_3.weight.data.normal_(0, 0.1)
 
         self.fc1 = nn.Linear(s_dim, 30)
         self.fc1.weight.data.normal_(0, 0.1) # initialization
@@ -24,19 +39,55 @@ class ANet(nn.Module):   # ae(s)=a
 
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.out(x)
-        x = F.softmax(x, 1)
-        actions_value = x*self.a_bound
+
+        x_ = torch.FloatTensor(np.zeros((x.shape[0], self.s_dim)))
+        x = torch.FloatTensor(x)
+        x_[:, :3] = x[:, :3]
+
+        x_[:, 3] = nn.ReLU()(
+            self.CNN_fc_1(
+                self.CNN_1(x[:, 3 + 0*self.N_BLOCKS: 3 + (0+1)*self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
+            ))).reshape((-1))
+
+        x_[:, 4] = nn.ReLU()(
+            self.CNN_fc_2(
+                self.CNN_2(x[:, 3 + 1 * self.N_BLOCKS: 3 + (1 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
+                           ))).reshape((-1))
+
+        x_[:, 5] = nn.ReLU()(
+            self.CNN_fc_3(
+                self.CNN_3(x[:, 3 + 2 * self.N_BLOCKS: 3 + (2 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
+                           ))).reshape((-1))
+
+        x_ = self.fc1(x_)
+        x_ = F.relu(x_)
+        x_ = self.out(x_)
+        x_ = F.softmax(x_, 1)
+        actions_value = x_*self.a_bound
 
         return actions_value
 
 
 class CNet(nn.Module):   # ae(s)=a
 
-    def __init__(self, s_dim, a_dim):
+    def __init__(self, s_dim, a_dim, N_BLOCKS=5):
         super(CNet,self).__init__()
+
+        self.N_BLOCKS = N_BLOCKS
+        self.s_dim = s_dim
+
+        self.CNN_1 = nn.Conv1d(1, 1, 2)
+        self.CNN_fc_1 = nn.Linear(N_BLOCKS - 1, 1)
+        self.CNN_fc_1.weight.data.normal_(0, 0.1)
+
+        self.CNN_2 = nn.Conv1d(1, 1, 2)
+        self.CNN_fc_2 = nn.Linear(N_BLOCKS - 1, 1)
+        self.CNN_fc_2.weight.data.normal_(0, 0.1)
+
+        self.CNN_3 = nn.Conv1d(1, 1, 2)
+        self.CNN_fc_3 = nn.Linear(N_BLOCKS - 1, 1)
+        self.CNN_fc_3.weight.data.normal_(0, 0.1)
+
         self.fcs = nn.Linear(s_dim, 30)
         self.fcs.weight.data.normal_(0, 0.1) # initialization
         self.fca = nn.Linear(a_dim, 30)
@@ -46,7 +97,27 @@ class CNet(nn.Module):   # ae(s)=a
 
 
     def forward(self, s, a):
-        x = self.fcs(s)
+
+        x_ = torch.FloatTensor(np.zeros((s.shape[0], self.s_dim)))
+        s = torch.FloatTensor(s)
+        x_[:, 3] = s[:, 3]
+
+        x_[:, 3] = nn.ReLU()(
+            self.CNN_fc_1(
+                self.CNN_1(s[:, 3 + 0 * self.N_BLOCKS: 3 + (0 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
+                           ))).reshape((-1))
+
+        x_[:, 4] = nn.ReLU()(
+            self.CNN_fc_2(
+                self.CNN_2(s[:, 3 + 1 * self.N_BLOCKS: 3 + (1 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
+                           ))).reshape((-1))
+
+        x_[:, 5] = nn.ReLU()(
+            self.CNN_fc_3(
+                self.CNN_3(s[:, 3 + 2 * self.N_BLOCKS: 3 + (2 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
+                           ))).reshape((-1))
+
+        x = self.fcs(x_)
         y = self.fca(a)
         net = F.relu(x+y)
         actions_value = self.out(net)
@@ -65,7 +136,8 @@ class DDPG(object):
                  lr_c,
                  gamma,
                  batch_size,
-                 TAU
+                 TAU,
+                 N_BLOCKS
                  ):
         self.a_dim, self.s_dim, self.a_bound = a_dim, s_dim, a_bound,
 
@@ -73,8 +145,10 @@ class DDPG(object):
         self.BATCH_SIZE = batch_size
         self.TAU = TAU
         self.LR_A, self.LR_C, self.GAMMA = lr_a, lr_c, gamma
+        self.N_BLOCKS = N_BLOCKS
 
-        self.memory = np.zeros((self.MEMORY_CAPACITY, s_dim * 2 + a_dim + 1), dtype=np.float32)
+        self.MEM_S_DIM = (3 + 3*N_BLOCKS) * 2 + a_dim + 1
+        self.memory = np.zeros((self.MEMORY_CAPACITY, self.MEM_S_DIM), dtype=np.float32)
         self.pointer = 0
 
         self.Actor_eval = ANet(s_dim, a_dim, a_bound)
@@ -100,15 +174,12 @@ class DDPG(object):
             eval('self.Critic_target.' + x + '.data.mul_((1-self.TAU))')
             eval('self.Critic_target.' + x + '.data.add_(self.TAU*self.Critic_eval.' + x + '.data)')
 
-        # soft target replacement
-        #self.sess.run(self.soft_replace)  # 用ae、ce更新at，ct
-
         indices = np.random.choice(self.MEMORY_CAPACITY, size=self.BATCH_SIZE)
         b_t = self.memory[indices, :]
-        b_s = torch.FloatTensor(b_t[:, :self.s_dim])
-        b_a = torch.FloatTensor(b_t[:, self.s_dim: self.s_dim + self.a_dim])
-        b_r = torch.FloatTensor(b_t[:, -self.s_dim - 1: -self.s_dim])
-        b_s_ = torch.FloatTensor(b_t[:, -self.s_dim:])
+        b_s = b_t[:, :3+3*self.N_BLOCKS]
+        b_a = torch.FloatTensor(b_t[:, 3+3*self.N_BLOCKS: 3+3*self.N_BLOCKS + self.a_dim])
+        b_r = torch.FloatTensor(b_t[:, -(3+3*self.N_BLOCKS) - 1])
+        b_s_ = b_t[:, -(3+3*self.N_BLOCKS):]
 
         a = self.Actor_eval(b_s)
         q = self.Critic_eval(b_s, a)  # loss=-q=-ce（s,ae（s））更新ae   ae（s）=a   ae（s_）=a_
@@ -135,9 +206,10 @@ class DDPG(object):
 
 
     def store_transition(self, s, a, r, s_):
-        transition = np.hstack((s, a, [r], s_))
+        transition = s+a+r+s_
         index = self.pointer % self.MEMORY_CAPACITY  # replace the old memory with new memory
-        self.memory[index, :] = transition
+        # print(transition)
+        self.memory[index] = transition
         self.pointer += 1
 
 
@@ -147,18 +219,23 @@ class DDPG(object):
         if not file_name:
             file_name ='output/torch_%s_suffix.onnx' % ''.join(str(time.time()).split('.'))
 
-        b_s = torch.autograd.Variable(torch.FloatTensor(self.memory[0, :self.s_dim]).reshape((-1, self.s_dim)))
-        b_s_ = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -self.s_dim:]).reshape((-1, self.s_dim)))
+        # b_s = torch.FloatTensor(self.memory[:2, :3+3*self.N_BLOCKS]).reshape((-1, 3+3*self.N_BLOCKS)).detach()
+        b_s = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -(3+3*self.N_BLOCKS):].reshape((-1, 3+3*self.N_BLOCKS))), requires_grad=False)
+        b_s_ = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -(3+3*self.N_BLOCKS):].reshape((-1, 3+3*self.N_BLOCKS))), requires_grad=False)
+
+        # with SummaryWriter(comment='Actor_eval') as w:
+        #     w.add_graph(self.Actor_eval, (b_s,))
+        #     # w.add_graph(self.Critic_eval, (b_s,))
 
         output = torch.onnx.export(self.Actor_eval,
                                    b_s,
                                    file_name.replace('suffix', 'eval'),
-                                   verbose=False)
+                                   verbose=True)
 
         output = torch.onnx.export(self.Actor_target,
                                    b_s_,
                                    file_name.replace('suffix', 'target'),
-                                   verbose=False)
+                                   verbose=True)
 
         return file_name.replace('suffix', 'eval')
 
