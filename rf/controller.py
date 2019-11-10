@@ -37,7 +37,7 @@ class Env_rust(object):
             f.write("STEP_1_ATTEMP-1")
 
         # reset redis
-        if isinstance(redis_cursor, Redis_py):
+        if redis_cursor:
             redis_cursor.flush_all()
 
         # reset log

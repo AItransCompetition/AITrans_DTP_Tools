@@ -46,7 +46,7 @@ REDIS_DATA_BW_MAX=10000
 REDIS_DATA_RTT_MAX=2000
 REDIS_DATA_PATTERN="FIRST_ATTEMP-*"
 
-Iters2Save=1000
+Iters2Save=100
 Seconds2Save=20.
 STATES_KEYS=['bandwidth', 'rtt', 'loss_rate', 'priority', 'remaing_time', 'send_buf_len']
 
@@ -228,13 +228,25 @@ def ddpg_runner(env):
         real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
         latest_block_id_list, latest_block_list = env.get_latest_block_info(pattern=real_pattern, size=0, pre_block=pre_redis_list_id)
 
+        # time counter
+        if time.time() - t1 >= Seconds2Save:
+            t1 = time.time()
+            global_sars_ = []
+            pre_reward = {}
+            print("its time %f" %(t1))
+            ATTEMP_NUMS = int(time.time() * 10 ** 10)
+            real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
+            t2 = threading.Thread(target=rust_env.restart_rust, args=(onnx_file, real_pattern,),
+                                  name='rust restarter')
+            t2.start()
+            t2.join()
+
         if not latest_block_id_list or len(latest_block_id_list) == 0:
-            print("%f there is no data with pattern %s in redis" % (time.time(), real_pattern))
-            # restart_rust('ddpg_jay.onnx')
+            print("%f there is no data with pattern %s in redis, pre time %f i_episode %d pointer %d" % (time.time(), real_pattern, t1, i_episode, ddpg.pointer))
             continue
 
         # print("id list {0} pre id {1}".format(latest_block_id_list, pre_redis_list_id))
-        pre_redis_list_id = latest_block_list[-1]
+        pre_redis_list_id = latest_block_id_list[-1]
 
         for latest_block_id, latest_block in gen_next_data(latest_block_id_list, latest_block_list):
             # print(latest_block_id, len(latest_block), REDIS_DATA_CIRCLE)
@@ -266,18 +278,6 @@ def ddpg_runner(env):
                 print('Episode:', i_episode, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, )
                 print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1] / statis[0]))
                 onnx_file = ddpg.save2onnx()
-
-        if time.time() - t1 >= Seconds2Save:
-            t1 = time.time()
-            global_sars_ = []
-            pre_reward = {}
-            print("its time %f" %(t1))
-            ATTEMP_NUMS = int(time.time() * 10 ** 10)
-            real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
-            t2 = threading.Thread(target=rust_env.restart_rust, args=(onnx_file, real_pattern,),
-                                  name='rust restarter')
-            t2.start()
-            print("main")
 
     print('Running time: ', time.time() - t1)
 
