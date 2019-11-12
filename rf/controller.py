@@ -14,17 +14,19 @@ from redis_py import Redis_py
 
 class Env_rust(object):
 
-    def __init__(self):
+    def __init__(self, port=6666):
 
         ################### rust controler ###################
 
-        self.rust_path = "/root/junjay/examples-11-9/"
-        self.ddpg_path = "/root/junjay/AITrans_DTP/rf/"
+        self.rust_path = "" # ""/root/junjay/examples-11-9/"
+        self.ddpg_path = "" # ""/root/junjay/AITrans_DTP/rf/"
         self.file_model_path = "config/model_path"
         self.order_list = [
-            self.rust_path + "server 127.0.0.1 6666 > ddpg_server.log >/dev/null 2>&1 & ",
-            self.rust_path + "client 127.0.0.1 6666 config/config-DTP.txt 0.5 0.5 >/dev/null 2>&1 & "
+            "./server 127.0.0.1 %d > ddpg_server.log 2>&1 & " % (port),
+            "./client 127.0.0.1 %d config/config-DTP.txt 0.5 0.5 > ddpg_client.log 2>&1 & " % (port)
         ]
+
+        self.port = port
 
 
     def reset(self, redis_cursor, REDIS_DATA_PATTERN):
@@ -32,23 +34,23 @@ class Env_rust(object):
         print("reset env")
 
         # reset model_path file
-        with open(self.rust_path + self.file_model_path, "w") as f:
-            f.write("ddpg_jay.onnx\n")
-            f.write("STEP_1_ATTEMP-1")
 
         # reset redis
-        if redis_cursor:
-            redis_cursor.flush_all()
 
         # reset log
         with open("reward.log", "w") as f:
             f.write('\n')
 
-        self.restart_rust('sss.onnx', REDIS_DATA_PATTERN)
+        self.restart_rust('output/ddpg_jay.onnx', REDIS_DATA_PATTERN)
 
 
     def restart_rust(self, onnx_file, REDIS_DATA_PATTERN):
-
+        '''
+        to do
+         1. split client(server) start, status check
+         2. split model_path change
+         3. dont use absolute path
+        '''
 
         def cmd_content(cmd):
 
@@ -60,7 +62,6 @@ class Env_rust(object):
         print("restart_rust")
         print(onnx_file, REDIS_DATA_PATTERN)
 
-
         os.system("echo restart rust")
         os.system("cp %s %s" % (onnx_file, self.rust_path + "ddpg_jay.onnx"))
         # change file model_path
@@ -68,11 +69,12 @@ class Env_rust(object):
         with open(self.rust_path + self.file_model_path, "w") as f:
             # f.write(onnx_file+'\n')
             f.write("ddpg_jay.onnx\n")
-            f.write(REDIS_DATA_PATTERN)
+            f.write(REDIS_DATA_PATTERN+"\n")
+            f.write("0.9")
 
         # kill server
         print("kill server")
-        ret = cmd_content("lsof -i:6666")
+        ret = cmd_content("lsof -i:%d" % (self.port))
         if len(ret) >= 9:
             os.system("kill -9 %s" % ret.split()[10])
 
@@ -80,8 +82,8 @@ class Env_rust(object):
         print("kill client")
         ret = cmd_content('ps -aux | grep "client 127.0.0.1"')
 
-        if 'client 127.0.0.1 6666' in ret:
-            p = ret.index('client 127.0.0.1 6666')
+        if 'client 127.0.0.1 %d' % (self.port) in ret:
+            p = ret.index('client 127.0.0.1 %d' % (self.port))
             ps = ret[:p].split()[1]
             os.system("kill -9 %s" % ps)
 
@@ -89,8 +91,10 @@ class Env_rust(object):
         for od in self.order_list:
             os.system(od)
 
+        print("finish restart")
+
 
 if __name__ == '__main__':
 
-    print(REDIS_DATA_CIRCLE)
-    pass
+    obj = Env_rust()
+    obj.restart_rust('ddpg_jay.onnx', 'STEP_15735763836267857920_ATTEMP-')

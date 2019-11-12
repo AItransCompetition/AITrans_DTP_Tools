@@ -20,50 +20,20 @@ class ANet(nn.Module):   # ae(s)=a
         self.N_BLOCKS = N_BLOCKS
         self.s_dim = s_dim
 
-        self.CNN_1 = nn.Conv1d(1, 1, 2)
-        self.CNN_fc_1 = nn.Linear(N_BLOCKS-1, 1)
-        self.CNN_fc_1.weight.data.normal_(0, 0.1)
-
-        self.CNN_2 = nn.Conv1d(1, 1, 2)
-        self.CNN_fc_2 = nn.Linear(N_BLOCKS - 1, 1)
-        self.CNN_fc_2.weight.data.normal_(0, 0.1)
-
-        self.CNN_3 = nn.Conv1d(1, 1, 2)
-        self.CNN_fc_3 = nn.Linear(N_BLOCKS - 1, 1)
-        self.CNN_fc_3.weight.data.normal_(0, 0.1)
-
-        self.fc1 = nn.Linear(s_dim, 30)
+        self.fc1 = nn.Linear(s_dim*N_BLOCKS, 100)
         self.fc1.weight.data.normal_(0, 0.1) # initialization
-        self.out = nn.Linear(30, a_dim)
+        self.out = nn.Linear(100, a_dim)
         self.out.weight.data.normal_(0, 0.1) # initialization
 
 
     def forward(self, x):
 
-        x_ = torch.FloatTensor(np.zeros((x.shape[0], self.s_dim)))
-        x = torch.FloatTensor(x)
-        x_[:, :3] = x[:, :3]
-
-        x_[:, 3] = nn.ReLU()(
-            self.CNN_fc_1(
-                self.CNN_1(x[:, 3 + 0*self.N_BLOCKS: 3 + (0+1)*self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
-            ))).reshape((-1))
-
-        x_[:, 4] = nn.ReLU()(
-            self.CNN_fc_2(
-                self.CNN_2(x[:, 3 + 1 * self.N_BLOCKS: 3 + (1 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
-                           ))).reshape((-1))
-
-        x_[:, 5] = nn.ReLU()(
-            self.CNN_fc_3(
-                self.CNN_3(x[:, 3 + 2 * self.N_BLOCKS: 3 + (2 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
-                           ))).reshape((-1))
-
-        x_ = self.fc1(x_)
-        x_ = F.relu(x_)
-        x_ = self.out(x_)
-        x_ = F.softmax(x_, 1)
-        actions_value = x_*self.a_bound
+        x = x.reshape((-1, self.s_dim*self.N_BLOCKS))
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.out(x)
+        x = F.softmax(x, 1)
+        actions_value = x*self.a_bound
 
         return actions_value
 
@@ -76,50 +46,20 @@ class CNet(nn.Module):   # ae(s)=a
         self.N_BLOCKS = N_BLOCKS
         self.s_dim = s_dim
 
-        self.CNN_1 = nn.Conv1d(1, 1, 2)
-        self.CNN_fc_1 = nn.Linear(N_BLOCKS - 1, 1)
-        self.CNN_fc_1.weight.data.normal_(0, 0.1)
-
-        self.CNN_2 = nn.Conv1d(1, 1, 2)
-        self.CNN_fc_2 = nn.Linear(N_BLOCKS - 1, 1)
-        self.CNN_fc_2.weight.data.normal_(0, 0.1)
-
-        self.CNN_3 = nn.Conv1d(1, 1, 2)
-        self.CNN_fc_3 = nn.Linear(N_BLOCKS - 1, 1)
-        self.CNN_fc_3.weight.data.normal_(0, 0.1)
-
-        self.fcs = nn.Linear(s_dim, 30)
+        self.fcs = nn.Linear(s_dim*N_BLOCKS, 50)
         self.fcs.weight.data.normal_(0, 0.1) # initialization
-        self.fca = nn.Linear(a_dim, 30)
+        self.fca = nn.Linear(a_dim, 50)
         self.fca.weight.data.normal_(0, 0.1) # initialization
-        self.out = nn.Linear(30, 1)
+        self.out = nn.Linear(50, 1)
         self.out.weight.data.normal_(0, 0.1)  # initialization
 
 
     def forward(self, s, a):
 
-        x_ = torch.FloatTensor(np.zeros((s.shape[0], self.s_dim)))
-        s = torch.FloatTensor(s)
-        x_[:, 3] = s[:, 3]
-
-        x_[:, 3] = nn.ReLU()(
-            self.CNN_fc_1(
-                self.CNN_1(s[:, 3 + 0 * self.N_BLOCKS: 3 + (0 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
-                           ))).reshape((-1))
-
-        x_[:, 4] = nn.ReLU()(
-            self.CNN_fc_2(
-                self.CNN_2(s[:, 3 + 1 * self.N_BLOCKS: 3 + (1 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
-                           ))).reshape((-1))
-
-        x_[:, 5] = nn.ReLU()(
-            self.CNN_fc_3(
-                self.CNN_3(s[:, 3 + 2 * self.N_BLOCKS: 3 + (2 + 1) * self.N_BLOCKS].reshape((-1, 1, self.N_BLOCKS))
-                           ))).reshape((-1))
-
-        x = self.fcs(x_)
-        y = self.fca(a)
-        net = F.relu(x+y)
+        s = s.reshape((-1, self.s_dim * self.N_BLOCKS))
+        s = self.fcs(s)
+        a = self.fca(a)
+        net = F.relu(s+a)
         actions_value = self.out(net)
 
         return actions_value
@@ -148,7 +88,11 @@ class DDPG(object):
         self.N_BLOCKS = N_BLOCKS
 
         self.MEM_S_DIM = (3 + 3*N_BLOCKS) * 2 + a_dim + 1
-        self.memory = np.zeros((self.MEMORY_CAPACITY, self.MEM_S_DIM), dtype=np.float32)
+        self.memory_s = np.zeros((self.MEMORY_CAPACITY, self.N_BLOCKS, self.s_dim), dtype=np.float32)
+        self.memory_a = np.zeros((self.MEMORY_CAPACITY, self.a_dim))
+        self.memory_r = np.zeros(self.MEMORY_CAPACITY, dtype=np.float32)
+        self.memory_s_ = np.zeros((self.MEMORY_CAPACITY, self.N_BLOCKS, self.s_dim), dtype=np.float32)
+
         self.pointer = 0
 
         self.Actor_eval = ANet(s_dim, a_dim, a_bound)
@@ -161,7 +105,7 @@ class DDPG(object):
 
 
     def choose_action(self, s):
-        s = torch.unsqueeze(torch.FloatTensor(s), 0)
+        # s = torch.unsqueeze(torch.FloatTensor(s), 0)
         return self.Actor_eval(s)[0].detach() # ae（s）
 
 
@@ -175,11 +119,11 @@ class DDPG(object):
             eval('self.Critic_target.' + x + '.data.add_(self.TAU*self.Critic_eval.' + x + '.data)')
 
         indices = np.random.choice(self.MEMORY_CAPACITY, size=self.BATCH_SIZE)
-        b_t = self.memory[indices, :]
-        b_s = b_t[:, :3+3*self.N_BLOCKS]
-        b_a = torch.FloatTensor(b_t[:, 3+3*self.N_BLOCKS: 3+3*self.N_BLOCKS + self.a_dim])
-        b_r = torch.FloatTensor(b_t[:, -(3+3*self.N_BLOCKS) - 1]).reshape((-1, 1))
-        b_s_ = b_t[:, -(3+3*self.N_BLOCKS):]
+        # b_t = self.memory[indices, :]
+        b_s = torch.FloatTensor(self.memory_s[indices])
+        b_a = torch.FloatTensor(self.memory_a[indices])
+        b_r = torch.FloatTensor(self.memory_r[indices]).reshape((-1, 1))
+        b_s_ = torch.FloatTensor(self.memory_s_[indices])
 
         a = self.Actor_eval(b_s)
         q = self.Critic_eval(b_s, a)  # loss=-q=-ce（s,ae（s））更新ae   ae（s）=a   ae（s_）=a_
@@ -206,9 +150,14 @@ class DDPG(object):
 
 
     def store_transition(self, s, a, r, s_):
-        transition = s+a+r+s_
+
         index = self.pointer % self.MEMORY_CAPACITY  # replace the old memory with new memory
-        self.memory[index] = transition
+
+        self.memory_s[index] = np.array(s).transpose()
+        self.memory_a[index] = a
+        self.memory_r[index] = r
+        self.memory_s_[index] = np.array(s_).transpose()
+
         self.pointer += 1
 
 
@@ -218,8 +167,8 @@ class DDPG(object):
         if not file_name:
             file_name ='output/torch_%s_suffix.onnx' % ''.join(str(time.time()).split('.'))
 
-        b_s = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -(3+3*self.N_BLOCKS):].reshape((-1, 3+3*self.N_BLOCKS))), requires_grad=False)
-        b_s_ = torch.autograd.Variable(torch.FloatTensor(self.memory[0, -(3+3*self.N_BLOCKS):].reshape((-1, 3+3*self.N_BLOCKS))), requires_grad=False)
+        b_s = torch.autograd.Variable(torch.FloatTensor(torch.FloatTensor(self.memory_s[0])), requires_grad=False)
+        b_s_ = torch.autograd.Variable(torch.FloatTensor(torch.FloatTensor(self.memory_s_[0])), requires_grad=False)
 
         # tensorboardX
         # with SummaryWriter(comment='Actor_eval') as w:
@@ -250,7 +199,8 @@ class DDPG(object):
         model = onnx.load(file_name)
 
         rep = backend.prepare(model, device='CPU')
-        s = np.array([0.15464788732394366, 0.497, 0.0, 0.9992660479428109, 0.0, 0.567515], dtype=np.float32).reshape((-1, self.s_dim))
-
+        # s = np.array([0.15464788732394366, 0.497, 0.0, 0.9992660479428109, 0.0, 0.567515], dtype=np.float32).reshape((-1, self.s_dim))
+        s = np.array([[1.0739, 0.0265, 0.0000, 1.0000, 1.0000, 0.5000, 1.0000, 0.0000, 0.9069,
+         0.9069, 0.9069, 0.9069, 0.9111, 1.0000, 1.0000, 1.0000, 1.0000, 0.9548]])
         print(rep.run(s))
-        print(self.choose_action([0.15464788732394366, 0.497, 0.0, 0.9992660479428109, 0.0, 0.567515]))
+        print(self.choose_action(s))

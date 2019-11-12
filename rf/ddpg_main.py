@@ -56,9 +56,11 @@ pre_redis_list_id=None
 
 statis=[0, 0]
 
-ATTEMP_NUMS=3
+ATTEMP_NUMS=1
 
-onnx_file='torch_15732935748391511_eval.onnx'#'sss.onnx'
+onnx_file='ddpg_jay.onnx'
+
+asych=False
 
 def clear_single_data(raw_data):
     '''
@@ -208,7 +210,8 @@ def ddpg_runner(env):
                 TAU,
                 N_BLOCKS
                 )
-
+    # ddpg.load_onnx('ddpg_jay.onnx')
+    # return
     var = 3  # control exploration
     t1 = time.time()
     i_episode = 0
@@ -236,10 +239,13 @@ def ddpg_runner(env):
             print("its time %f" %(t1))
             ATTEMP_NUMS = int(time.time() * 10 ** 10)
             real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
-            t2 = threading.Thread(target=rust_env.restart_rust, args=(onnx_file, real_pattern,),
-                                  name='rust restarter')
-            t2.start()
-            t2.join()
+            if asych:
+                t2 = threading.Thread(target=rust_env.restart_rust, args=(onnx_file, real_pattern,),
+                                      name='rust restarter')
+                t2.start()
+                t2.join()
+            else:
+                rust_env.restart_rust(onnx_file, real_pattern)
 
         if not latest_block_id_list or len(latest_block_id_list) == 0:
             print("%f there is no data with pattern %s in redis, pre time %f i_episode %d pointer %d" % (time.time(), real_pattern, t1, i_episode, ddpg.pointer))
@@ -257,28 +263,39 @@ def ddpg_runner(env):
 
             # 从redis中提取数据
             s = latest_block[:N_STATES]
-            s = s[:3] + s[3] + s[4] + s[5]
+            new_s = [
+                [s[0]] * N_BLOCKS,
+                [s[1]] * N_BLOCKS,
+                [s[2]] * N_BLOCKS,
+                s[3], s[4], s[5]
+            ]
             a = latest_block[N_STATES: N_STATES+N_ACTIONS]
-            r = [latest_block[N_STATES+N_ACTIONS]]
+            r = latest_block[N_STATES+N_ACTIONS]
             s_ = latest_block[-N_STATES:]
-            s_ = s_[:3] + s_[3] + s_[4] + s_[5]
+            new_s_ = [
+                [s_[0]] * N_BLOCKS,
+                [s_[1]] * N_BLOCKS,
+                [s_[2]] * N_BLOCKS,
+                s_[3], s_[4], s_[5]
+            ]
 
             statis[1] += 1
 
-            ddpg.store_transition(s, a, r, s_)
+            ddpg.store_transition(new_s, a, r, new_s_)
 
             if ddpg.pointer > MEMORY_CAPACITY:
                 var *= .9995  # decay the action randomness
                 ddpg.learn()
 
-            ep_reward += r[0]
+            ep_reward += r
             i_episode += 1
 
             if i_episode and i_episode % MAX_EP_STEPS == 0:
                 print('Episode:', i_episode, ' Reward: %i' % int(ep_reward), 'Explore: %.2f' % var, )
                 print("valid data {0}, invalid data {1}, rate {2}".format(statis[1], statis[0], statis[1] / statis[0]))
                 onnx_file = ddpg.save2onnx()
-
+        # if i_episode % MAX_EP_STEPS == 0:
+        #     break
     print('Running time: ', time.time() - t1)
 
 
@@ -288,12 +305,12 @@ if __name__ == '__main__':
     print("ddpg_main is run~")
     pre_time = time.time()
     first_run = True
-    rust_env = Env_rust()
+    rust_env = Env_rust(port=6666)
     redis_env = Redis_py(REDIS_HOST, REDIS_PORT)
 
     ATTEMP_NUMS = int(time.time() * 10**10)
     real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
-    rust_env.reset(onnx_file, real_pattern)
+    rust_env.reset(redis_env, real_pattern)
 
     ddpg_runner(redis_env)
         # t1 = threading.Thread(target=ddpg_runner, args=(redis_env,), name='ddpg_runner')
