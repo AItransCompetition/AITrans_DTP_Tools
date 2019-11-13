@@ -22,8 +22,8 @@ class Env_rust(object):
         self.ddpg_path = "" # ""/root/junjay/AITrans_DTP/rf/"
         self.file_model_path = "config/model_path"
         self.order_list = [
-            "./server 127.0.0.1 %d > ddpg_server.log 2>&1 & " % (port),
-            "./client 127.0.0.1 %d config/config-DTP.txt 0.5 0.5 > ddpg_client.log 2>&1 & " % (port)
+            "./server 127.0.0.1 %d > ddpg_server.log & " % (port),
+            "./client 127.0.0.1 %d config/config-DTP.txt 0.5 0.5 > ddpg_client.log & " % (port)
         ]
 
         self.port = port
@@ -77,6 +77,7 @@ class Env_rust(object):
         ret = cmd_content("lsof -i:%d" % (self.port))
         if len(ret) >= 9:
             os.system("kill -9 %s" % ret.split()[10])
+            print("killed server")
 
         # kill client
         print("kill client")
@@ -86,10 +87,12 @@ class Env_rust(object):
             p = ret.index('client 127.0.0.1 %d' % (self.port))
             ps = ret[:p].split()[1]
             os.system("kill -9 %s" % ps)
+            print("killed client")
 
         os.system("echo restart rust")
         for od in self.order_list:
             os.system(od)
+            print(od)
 
         print("finish restart")
 

@@ -210,7 +210,7 @@ def ddpg_runner(env):
                 TAU,
                 N_BLOCKS
                 )
-    # ddpg.load_onnx('ddpg_jay.onnx')
+    # ddpg.load_onnx('torch_15735757472114654_eval.onnx')
     # return
     var = 3  # control exploration
     t1 = time.time()
@@ -246,12 +246,14 @@ def ddpg_runner(env):
                 t2.join()
             else:
                 rust_env.restart_rust(onnx_file, real_pattern)
+            time.sleep(10)
 
         if not latest_block_id_list or len(latest_block_id_list) == 0:
             print("%f there is no data with pattern %s in redis, pre time %f i_episode %d pointer %d" % (time.time(), real_pattern, t1, i_episode, ddpg.pointer))
             continue
 
         # print("id list {0} pre id {1}".format(latest_block_id_list, pre_redis_list_id))
+        # todo : avoid use the not complete data
         pre_redis_list_id = latest_block_id_list[-1]
 
         for latest_block_id, latest_block in gen_next_data(latest_block_id_list, latest_block_list):
@@ -280,7 +282,8 @@ def ddpg_runner(env):
             ]
 
             statis[1] += 1
-
+            print("Memory data")
+            print(new_s, a, r, new_s_)
             ddpg.store_transition(new_s, a, r, new_s_)
 
             if ddpg.pointer > MEMORY_CAPACITY:
@@ -311,7 +314,7 @@ if __name__ == '__main__':
     ATTEMP_NUMS = int(time.time() * 10**10)
     real_pattern = REDIS_DATA_PATTERN.replace("FIRST", "STEP_%d" % ATTEMP_NUMS)
     rust_env.reset(redis_env, real_pattern)
-
+    time.sleep(10)
     ddpg_runner(redis_env)
         # t1 = threading.Thread(target=ddpg_runner, args=(redis_env,), name='ddpg_runner')
         # t1.start()
