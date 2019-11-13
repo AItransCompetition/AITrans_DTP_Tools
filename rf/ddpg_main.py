@@ -78,58 +78,28 @@ def clear_single_data(raw_data):
 
 
     # cal reward
-    state_idx=-1
     redis_reward={}
-    fir=True
+    flag=0
     last_states={}
     log_s_reward = .0
     action=None
-    # cal reward
+
+    order_data = {}
+    fir = True
+
     for idx, item in enumerate(raw_data[::-1]):
 
+        # cal states
         if "ID" not in item:
-            if fir:
+            flag |= 1
+            item = json.loads(item)
+
+            if item['block_size'] == 0 or item['deadline'] == 0:
                 continue
-            state_idx=idx
-            break
 
-        if fir:
-            fir=False
+            if item['block_id'] not in order_data.keys():
+                order_data[item['block_id']] = item
 
-        id, now_reward = re.findall('[0-9]+', item)
-        id, now_reward = int(id), float(now_reward)
-
-        if now_reward == 0:
-            continue
-
-        if id not in pre_reward.keys():
-            pre_reward[id] = 0
-
-        # the lastest, the biggest reward
-        if id not in redis_reward.keys():
-            redis_reward[id] = now_reward
-            log_s_reward += redis_reward[id] - pre_reward[id]
-
-    # no state in this list
-    if state_idx == -1:
-        return None, None
-
-    # cal states
-    order_data={}
-    fir=True
-    ## cal 'bandwidth', 'rtt', 'loss_rate'
-    for item in raw_data[-state_idx-1:0:-1]:
-
-        if "ID" in item:
-            continue
-
-        item = json.loads(item)
-
-        if item['block_size'] == 0 or item['deadline'] == 0:
-            continue
-
-        if item['block_id'] not in order_data.keys():
-            order_data[item['block_id']] = item
             # use the latest network states
             if fir:
                 last_states['bandwidth'] = item['bandwidth'] / REDIS_DATA_BW_MAX
@@ -138,9 +108,29 @@ def clear_single_data(raw_data):
                 action = [item['priority_params'], item['deadline_params'], item['finish_params']]
                 fir = False
 
-    if not action:
+        # cal reward
+        else:
+            flag |= 2
+
+            id, now_reward = re.findall('[0-9]+', item)
+            id, now_reward = int(id), float(now_reward)
+
+            if now_reward == 0:
+                continue
+
+            if id not in pre_reward.keys():
+                pre_reward[id] = 0
+
+            # the lastest, the biggest reward
+            if id not in redis_reward.keys():
+                redis_reward[id] = now_reward
+                log_s_reward += redis_reward[id] - pre_reward[id]
+
+    # no state or no reward in this list
+    if flag != 3:
         return None, None
 
+    # cal block states
     best_blocks = get_the_best_block(list(order_data.values()), topN=N_BLOCKS)
     del order_data
 
