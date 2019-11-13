@@ -33,10 +33,6 @@ class Env_rust(object):
 
         print("reset env")
 
-        # reset model_path file
-
-        # reset redis
-
         # reset log
         with open("reward.log", "w") as f:
             f.write('\n')

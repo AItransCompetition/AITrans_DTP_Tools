@@ -69,13 +69,25 @@ def clear_single_data(raw_data):
     :return: [[a, r, s] ...], total reward
     '''
 
-
     def get_the_best_block(list_data, key_col='remaing_time', topN=5, reverse=False):
 
-        res = sorted(list_data, key=lambda x: float(x[key_col]), reverse=reverse)
+        res = []
+        used = set()
+        topN = min(len(list_data), topN)
+        for i in range(topN):
+            min_loc = 0
+            for idx, item in enumerate(list_data):
 
-        return res[:topN]
+                if idx in used:
+                    continue
 
+                if min_loc == 0 or item[key_col] < list_data[min_loc][key_col]:
+                    min_loc = idx
+
+            used.add(min_loc)
+            res.append(list_data[min_loc])
+
+        return res
 
     # cal reward
     redis_reward={}
@@ -84,7 +96,8 @@ def clear_single_data(raw_data):
     log_s_reward = .0
     action=None
 
-    order_data = {}
+    order_data = []
+    order_data_id = set()
     fir = True
 
     for idx, item in enumerate(raw_data[::-1]):
@@ -97,8 +110,9 @@ def clear_single_data(raw_data):
             if item['block_size'] == 0 or item['deadline'] == 0:
                 continue
 
-            if item['block_id'] not in order_data.keys():
-                order_data[item['block_id']] = item
+            if item['block_id'] not in order_data_id:
+                order_data_id.add(item['block_id'])
+                order_data.append(item)
 
             # use the latest network states
             if fir:
@@ -115,8 +129,8 @@ def clear_single_data(raw_data):
             id, now_reward = re.findall('[0-9]+', item)
             id, now_reward = int(id), float(now_reward)
 
-            if now_reward == 0:
-                continue
+            # if now_reward == 0:
+            #     continue
 
             if id not in pre_reward.keys():
                 pre_reward[id] = 0
@@ -124,6 +138,7 @@ def clear_single_data(raw_data):
             # the lastest, the biggest reward
             if id not in redis_reward.keys():
                 redis_reward[id] = now_reward
+                # todo : scale reawrd
                 log_s_reward += redis_reward[id] - pre_reward[id]
 
     # no state or no reward in this list
@@ -131,7 +146,7 @@ def clear_single_data(raw_data):
         return None, None
 
     # cal block states
-    best_blocks = get_the_best_block(list(order_data.values()), topN=N_BLOCKS)
+    best_blocks = get_the_best_block(order_data, topN=N_BLOCKS)
     del order_data
 
     last_states['priority'] = [0] * N_BLOCKS
