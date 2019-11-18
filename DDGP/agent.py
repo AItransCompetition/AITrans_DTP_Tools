@@ -52,6 +52,7 @@ class agent(object):
             return 
 
         last_state = [[1.0,1.0,1.0,1.0,1.0,1.0]] * 5
+        last_block_reward = {}
         i_episode = 0
         ep_reward = 0
 
@@ -70,7 +71,11 @@ class agent(object):
             ff.write("\n")
             r = 0
             for block_id,block_reward in reward.items():
-                r += block_reward
+                if block_id not in last_block_reward:
+                    r += block_reward
+                else:
+                    r += block_reward-last_block_reward[block_id]
+                last_block_reward[block_id] = block_reward
             self.agent.store_transition(last_state, action, r, state)
 
             last_state = state

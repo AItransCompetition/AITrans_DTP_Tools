@@ -40,7 +40,7 @@ class data_process(object):
         # get the state ,action and reward
         for i in range(len(unit_list)):
            if "ID" not in unit_list[i]:
-               temp_dict = json.loads(unit_list[i]); 
+               temp_dict = json.loads(unit_list[i])
                state_list.append(temp_dict)
            else:
                temp_array = unit_list[i].split(",")

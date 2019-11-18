@@ -25,6 +25,13 @@ class ANet(nn.Module):   # ae(s)=a
         self.out = nn.Linear(100, a_dim)
         self.out.weight.data.normal_(0, 0.1) # initialization
 
+        def normal(data):
+            data = (data - data.min()) / (data.max() - data.min()) + 0.000001
+            data /= data.sum()
+            return data
+
+        self.fc2 = lambda x:normal(x)
+
 
     def forward(self, x):
 
@@ -32,7 +39,7 @@ class ANet(nn.Module):   # ae(s)=a
         x = self.fc1(x)
         x = F.relu(x)
         x = self.out(x)
-        x = F.softmax(x, 1)
+        x = self.fc2(x)
         actions_value = x*self.a_bound
 
         return actions_value
