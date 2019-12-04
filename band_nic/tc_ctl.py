@@ -206,7 +206,7 @@ if __name__ == '__main__':
     pre_time = time.time()
     params=parser.parse_args()
     params=vars(params)
-    print(params)
+    # print(params)
 
     # change once
     if params['change_once']:
