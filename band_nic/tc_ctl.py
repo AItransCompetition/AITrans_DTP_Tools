@@ -85,7 +85,7 @@ def load_file(**kwargs):
             # file content pattern :
             # time_stamp,bandwith,delay
             info_list = list(map(lambda x: x.strip().split(','), f.readlines()))
-            # print(info_list)
+
     except Exception as e:
         print("File path %s is wrong!" % file_path)
         print(e)
@@ -206,7 +206,6 @@ if __name__ == '__main__':
     pre_time = time.time()
     params=parser.parse_args()
     params=vars(params)
-    # print(params)
 
     # change once
     if params['change_once']:
