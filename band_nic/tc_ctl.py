@@ -23,20 +23,20 @@ help_info = '''
         Then it will use '1' as now timestamp, and changed eth0's bandwith to 10Mbit and delay to 20ms.
         After 4.2s (5.2-1), it changed eth0's bandwith to 5.5Mbit and delay to 10ms.
 
-        PS : eth0 is the parameter of nic default value, you can specify like this "nic=eth0"
+        PS : eth0 is the parameter of nic default value, you can specify like this "-nic eth0"
 
     2. -o bw_delay
         You can change the eth0's bandwith and delay per internal ms.
         By default, 
-            the bandwith is an random value in [1, 10), you can specify the "min_bw=1" and "max_bw=10" to config;
-            the delay is an random value in [0, 100), you can specify the "min_delay=0" and "max_delay=100" to config;
-            internal is 5, you can specify "internal=5" to config.
+            the bandwith is an random value in [1, 10), you can specify the "-mn_bw 1" and "-mx_bw 10" to config;
+            the delay is an random value in [0, 100), you can specify the "-mn_dl 0" and "-mx_dl 100" to config;
+            internal is 5, you can specify "-i 5" to config.
 
     3. -once 1
         You can change the eth0's bandwith and delay once.
         By default,
-            You can specify "bandwith=10" to set bandwith to 10Mbit;
-            You can specify "delay=10" to set delay to 10ms.
+            You can specify "--bandwith 10" to set bandwith to 10Mbit;
+            You can specify "--delay 10" to set delay to 10ms.
     '''
 
 def tc_easy_bandwith(**kwargs):
