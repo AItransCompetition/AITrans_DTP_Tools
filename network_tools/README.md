@@ -1,69 +1,63 @@
-Tc_ctl  readeMe.md
 
-## Introduce
+## TC Introduction
 
-The tc_ctl.py main functions is based on the **tc** order in linux. And its argument parser is based on the **argparse** in python library. All of the functions was tested in the python3.x .
+The TC is a way to control the nic behavior to emulate your network performance like bandwidth,loss rate and rtt.
 
-So, if you want to run this script, making sure there are tc n your os or docker container and argparser library in python packages. For tc, we have prepared the docker container with the ubuntu 16.04 for you. For argparse, just pip it ! Like :
+The TC info is in [Traffic Control](https://wiki.archlinux.org/index.php/Advanced_traffic_control_(%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87))
+
+## The TC scripts
+* The traffic_control.py main functions is based on the **tc** order in linux. 
+
+* And its argument parser is based on the **argparse** in python library. 
+
+* All of the functions was tested in the python3.x .
+
+* Python3 requirements:
 
 > pip install argparse
 
+## Quick Start
 After above, just input 
+
+> python3 tc_ctl.py -once 1 -bw 10 -dl 10
+
+       changed nic eth0, bandwith to 10.0mbit
+       changed nic eth0, delay_time to 10.0ms
 
 > python3 tc_ctl.py --show eth0
 
-This order will out all the queue discipline on the NIC eth0. If there are none error about tc or argparser, congratulations to you ! Now, You can use it to do more things.
+This order will out all the queue discipline on the NIC eth0. 
 
-## Function Examples
 
-- Change both of the bandwith and delay on a NIC according to a file.
+       qdisc tbf 1: root refcnt 2 rate 10Mbit burst 11000b lat 437.5ms
+       qdisc netem 10: parent 1:1 limit 1000 delay 10.0ms
 
-  Suppose there is a file named "test.txt".And it's content is below :
+If there are none error about tc or argparser, congratulations to you ! Now, You can use it to do more things.
 
+
+## Load Scripts Tools
+
+- If you want to change the network behaviro dynamicially, recommend to use the load trace file,which can both change the bandwith and delay on a NIC 
+
+  Suppose there is a file named "trace.txt".And it's content is below :
+
+   |  timestampe   | bandwidth(MB)|  delay(ms)|
+   |  --------     | --------     | --------  |
+   |  0.0000023    |  1.0         |   23.0    |
+   |  0.1132324    |  2.2         |   54.2    |  
+  
+  the trace content like this.
   > 1,23,10
   >
   > 5,10,20
   >
   > 15,7,23
-  >
-  > 30,100.213,23.34
-  
-
-For the above data, you can see it as an csv file. 
-
-For the first columns, it means the timestamp; The second columns means the bandwith (Mb) ; And the last is delay (ms).
 
 Then you can input below :
 
 > python3 tc_ctl.py -load test.txt
-  > 
 
-For the ouput, it will regard the "1" as the nowtime and change the NIC eth0's bandwith to 23Mbit and delay time to 10ms.
-
-After 4s (5-1=4), it will change the NIC eth0's bandwith to 10Mbit and delay time to 20ms.
-
-……
-
-In the last,  the NIC eth0's bandwith will be 100.213Mbit and delay time will be 23.34ms.
-
-By default, the script will operate on the NIC eth0. And you can specify another NIC by "-nic", like "-nic eth0".
-
-- Show all the queue disciplines on a NIC.
-
-  If you want to show all the queue disciplines on the NIC eth0, you can input below :
-
-  > python3 tc_ctl.py -sh eth0
-  > 
-
-  If you run the script according to the steps above, the NIC eth0's bandwith will be 100.213Mbit and delay time will be 23.34ms. So, the ouput now is like below :
-
-  > qdisc tbf 1: root refcnt 3 rate 100213Kbit burst 110222b lat 4.4s
-  >
-  > qdisc netem 10: parent 1:1 limit 1000 delay 23.3ms
-
-  The output involes the knowledge about tc order in linux. So, we recommend you to [Click me!](https://www.badunetworks.com/traffic-shaping-with-tc/)
-
-   if you want to learn more.
+## Delete the traffic control limit
 
 - Delete all the queue disciplines on a NIC.
 
@@ -74,9 +68,15 @@ By default, the script will operate on the NIC eth0. And you can specify another
 
   If the output is nothing or "RTNETLINK answers: No such file or directory", it means there is no queue disciplines on the NIC eth0 now.
 
+
+  if you want to learn more.
+  
+  The output involes the knowledge about tc order in linux. So, we recommend you to [Click me!](https://www.badunetworks.com/traffic-shaping-with-tc/)
+
+
 ## Tips
 
 All of above functions are enough for you in the competitions . For more detail about parameters, just run
 
-> python3 tc_ctl.py -h
+> python3 traffic_contril.py -h
 > 
