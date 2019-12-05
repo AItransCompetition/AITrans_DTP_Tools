@@ -14,16 +14,16 @@
 
 * Python3 requirements:
 
-> pip install argparse
+                                pip install argparse
 
 ## Quick Start
 
-> python3 traffic_control.py -once 1 -bw 10 -dl 10
+                            python3 traffic_control.py -once 1 -bw 10 -dl 10
 
        changed nic eth0, bandwith to 10.0mbit
        changed nic eth0, delay_time to 10.0ms
 
-> python3 traffic_control.py --show eth0
+                            python3 traffic_control.py --show eth0
 
 * This order will out all the queue discipline on the NIC eth0. 
 
@@ -54,7 +54,7 @@
 
 * Then you can input below :
 
-> python3 traffic_control.py -load trace.txt
+                               python3 traffic_control.py -load trace.txt
 
 ## Delete the traffic control limit
 
@@ -62,7 +62,7 @@
 
   If you want to delete all the queue disciplines on the NIC eth0, you can input below :
 
-  >  python3 traffic_control.py -r eth0
+                               python3 traffic_control.py -r eth0
   >  
 
 * If the output is nothing or "RTNETLINK answers: No such file or directory", it means there is no queue disciplines on the NIC eth0 now.
@@ -75,5 +75,5 @@
 
 * All of above functions are enough for you in the competitions . For more detail about parameters, just run
 
-> python3 traffic_contril.py -h
+                               python3 traffic_contril.py -h
 > 
