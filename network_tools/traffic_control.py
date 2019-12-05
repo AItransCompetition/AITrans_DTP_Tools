@@ -32,7 +32,7 @@ help_info = '''
             the delay is an random value in [0, 100), you can specify the "-mn_dl 0" and "-mx_dl 100" to config;
             internal is 5, you can specify "-i 5" to config.
 
-    3. -once 1
+    3. -once 
         You can change the eth0's bandwith and delay once.
         By default,
             You can specify "--bandwith 10" to set bandwith to 10Mbit;
@@ -89,6 +89,7 @@ def load_file(**kwargs):
     except Exception as e:
         print("File path %s is wrong!" % file_path)
         print(e)
+        return 
 
     try:
         for idx, item in enumerate(info_list):
@@ -168,7 +169,7 @@ def init_argparse():
                         help="For random delay")
 
     parser.add_argument("-once", "--change_once",
-                        metavar="ANY",
+                        action="store_true",
                         help="You can change the nic's bandwith and delay once.")
 
     # detail parameters
