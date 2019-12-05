@@ -41,17 +41,17 @@
 
   Suppose there is a file named "trace.txt".And it's content is below :
 
-   |  timestampe   | bandwidth(MB)|  delay(ms)|
-   |  --------     | --------     | --------  |
-   |  0.0000023    |  1.0         |   23.0    |
-   |  0.1132324    |  2.2         |   54.2    |  
+   |  timestampe   | bandwidth(mbps)|  delay(ms)|
+   |  --------     | -----------    | --------  |
+   |  0.0000023    |  1.0           |   23.0    |
+   |  0.1132324    |  2.2           |   54.2    |  
   
-  * the trace content like this.
-  > 1,23,10
+  * the trace content like this,the split use the tab
+  > 1	23	10
   >
-  > 5,10,20
+  > 5	10	20
   >
-  > 15,7,23
+  > 15	7	23
 
 * Then you can input below :
 
