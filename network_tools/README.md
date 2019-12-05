@@ -14,19 +14,20 @@
 
 * Python3 requirements:
 
-                                pip install argparse
+                            pip install argparse
 
 ## Quick Start
 
                             python3 traffic_control.py -once 1 -bw 10 -dl 10
+                            
+* This order will output change the queue discipline on the NIC eth0. 
 
        changed nic eth0, bandwith to 10.0mbit
        changed nic eth0, delay_time to 10.0ms
 
-                            python3 traffic_control.py --show eth0
+                           python3 traffic_control.py --show eth0
 
 * This order will out all the queue discipline on the NIC eth0. 
-
 
        qdisc tbf 1: root refcnt 2 rate 10Mbit burst 11000b lat 437.5ms
        qdisc netem 10: parent 1:1 limit 1000 delay 10.0ms
