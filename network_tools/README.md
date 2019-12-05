@@ -19,12 +19,12 @@ The TC info is in [Traffic Control](https://wiki.archlinux.org/index.php/Advance
 ## Quick Start
 After above, just input 
 
-> python3 tc_ctl.py -once 1 -bw 10 -dl 10
+> python3 traffic_control.py -once 1 -bw 10 -dl 10
 
        changed nic eth0, bandwith to 10.0mbit
        changed nic eth0, delay_time to 10.0ms
 
-> python3 tc_ctl.py --show eth0
+> python3 traffic_control.py --show eth0
 
 This order will out all the queue discipline on the NIC eth0. 
 
@@ -55,7 +55,7 @@ If there are none error about tc or argparser, congratulations to you ! Now, You
 
 Then you can input below :
 
-> python3 tc_ctl.py -load test.txt
+> python3 traffic_control.py -load trace.txt
 
 ## Delete the traffic control limit
 
@@ -63,7 +63,7 @@ Then you can input below :
 
   If you want to delete all the queue disciplines on the NIC eth0, you can input below :
 
-  >  python3 tc_ctl.py -r eth0
+  >  python3 traffic_control.py -r eth0
   >  
 
   If the output is nothing or "RTNETLINK answers: No such file or directory", it means there is no queue disciplines on the NIC eth0 now.
