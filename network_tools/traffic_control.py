@@ -55,8 +55,8 @@ def tc_easy_bandwith(**kwargs):
     else:
         bw = float(kwargs['bandwith'])
 
-    # from the examples : rate 256kbit buffer 1600 latency 11.2ms
-    buffer = bw*1310.72 if not kwargs['buffer'] else float(kwargs['buffer'])
+    # for ubuntu 16.04, the latest buffer to reach rate = rate / HZ
+    buffer = bw*11000 if not kwargs['buffer'] else float(kwargs['buffer'])
     latency = 100 if not kwargs['latency'] else float(kwargs['latency']) # bw*43.75
 
     os.system('tc qdisc add dev {0} root handle 1:0 tbf rate {1}mbit buffer {2} latency {3}ms'.format(
@@ -72,7 +72,7 @@ def tc_easy_bandwith(**kwargs):
     else:
         delay_ms = float(kwargs['delay'])
         if delay_ms <= 0.000001:
-            return 
+            return
 
     os.system('tc qdisc add dev {0} parent 1:1 handle 10: netem delay {1}ms'.format(nic_name, delay_ms))
     print("changed nic {0}, delay_time to {1}ms".format(nic_name, delay_ms))
