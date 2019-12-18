@@ -45,18 +45,28 @@ The AItrans competition 's topic is Dealine Awared Transport portocol(DTP), DTP 
                    docker run --privileged -dit --name {container name/AItrans_server} y654125664/aitrans:2.0
                              
 #### Quick Start with DTP
+#### This is the demo code of reiforcement learning
 
 > Enter sever container and start the sever(receiver), find your ip with ifconfig
                      
                              docker exec -it {container name/AItrans_server} /bin/bash
                              cd /root/AItrans/
-                             ./server {IP} {Port} 
+                             git clone -b rl_demo https://github.com/NGnetLab/AITrans_DTP.git
+                             cd AITrans_DTP/
+                             cp *.py ../
+                             cd ..
+                             python3 controller.py server {IP} {Port}
+
                              
 > Enter client container and start the client(sender), find your ip with ifconfig
                      
                              docker exec -it {container name/AItrans_client} /bin/bash
                              cd /root/AItrans/
-                             ./client {Server IP} {Port} config/config-DTP.txt
+                             git clone -b rl_demo https://github.com/NGnetLab/AITrans_DTP.git
+                             cd AITrans_DTP/
+                             cp *.py ../
+                             cd ..
+                             python3 controller.py client {IP} {Port} -c config/config-DTP.txt
 
 > You will wacth the logging in your cmd.
 
@@ -65,16 +75,20 @@ The AItrans competition 's topic is Dealine Awared Transport portocol(DTP), DTP 
 >@Notice. The logging function will bring overhead for your schedule. so you should close the logging into your console.
 
 ```diff
--                            ./server {IP} {Port} 
-+                            ./server {IP} {Port} 1> server_result.log 2> server.log
--                            ./client {Server IP} {Port} config/config-DTP.txt
-+                            ./client {Server IP} {Port} config/config-DTP.txt 1> client_result.log 2>client.log
+-                            python3 controller.py server {IP} {Port} 
++                            python3 controller.py server {IP} {Port} --log
+-                            python3 controller.py client {Server IP} {Port} -c config/config-DTP.txt
++                            python3 controller.py client {Server IP} {Port} -c config/config-DTP.txt --log
 ```                      
                             
 > You can see the server_result.log for your performance.
                             
-#### The Traffic document 
+#### Specification
 
-#### The debug tools document
+> You can change the learning algorithm in ``` user_func.py ```.
+
+> Function ``` get_action(state, model) ``` will return the action to DTP system.
+
+
 
 ![Pandao editor.md](https://pandao.github.io/editor.md/images/logos/editormd-logo-180x180.png "Pandao editor.md")
